@@ -1,0 +1,18 @@
+apiVersion: v2
+name: medvfs
+description: MedVFS — Clinical Data File Virtualization for ML Pipelines
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - medvfs
+  - fuse
+  - dicom
+  - wsi
+  - genomics
+  - clinical-data
+  - ml-pipeline
+home: https://github.com/colabbio/medvfs
+maintainers:
+  - name: ColabBio
+    url: https://colabbio.org

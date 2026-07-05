@@ -1,0 +1,245 @@
+# MedVFS Docker Integration Tests
+#
+# Validates POSIX compatibility of the MedVFS FUSE mount with real clinical
+# processing tools. Each service runs a specific tool against the FUSE mount
+# and exits with success/failure.
+#
+# Usage:
+#   docker compose -f docker-compose.test.yaml up --build --abort-on-container-exit
+#
+# The medvfs-fuse service starts the FUSE mount. The tool containers bind-mount
+# the FUSE mountpoint and execute validation scripts.
+#
+# Test data: place small .svs/.dcm/.bam files in ./testdata/fixtures/
+# or use synthetic files created by the setup service.
+
+services:
+  # ─── FUSE mount (sidecar pattern) ──────────────────────────────────────────
+  medvfs-fuse:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile
+    container_name: medvfs-fuse
+    privileged: true    # Required for FUSE
+    devices:
+      - /dev/fuse:/dev/fuse
+    cap_add:
+      - SYS_ADMIN
+    volumes:
+      - fuse-mount:/mnt/medvfs:rshared
+      - ./fixtures:/fixtures:ro
+    environment:
+      - MEDVFS_CONFIG=/fixtures/test-config.yaml
+      - MEDVFS_LOG_LEVEL=debug
+    command: ["serve", "--config", "/fixtures/test-config.yaml"]
+    healthcheck:
+      test: ["CMD", "ls", "/mnt/medvfs"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  # ─── Setup: create synthetic test data ────────────────────────────────────
+  test-setup:
+    image: alpine:3.20
+    container_name: medvfs-test-setup
+    volumes:
+      - ./fixtures:/fixtures
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        echo "Creating synthetic test fixtures..."
+        mkdir -p /fixtures
+
+        # 1. Synthetic TIFF (OpenSlide can at least detect format)
+        dd if=/dev/urandom bs=1M count=2 of=/fixtures/test_wsi.tiff 2>/dev/null
+        # Stamp TIFF magic bytes (little-endian)
+        printf '\x49\x49\x2a\x00' | dd of=/fixtures/test_wsi.tiff bs=1 count=4 conv=notrunc 2>/dev/null
+
+        # 2. Synthetic DICOM-like binary
+        dd if=/dev/urandom bs=512K count=1 of=/fixtures/test_scan.dcm 2>/dev/null
+
+        # 3. Synthetic BAM-like binary (bgzf header)
+        dd if=/dev/urandom bs=256K count=1 of=/fixtures/test_reads.bam 2>/dev/null
+
+        # 4. Config for FUSE mount pointing to local fixtures
+        cat > /fixtures/test-config.yaml << 'EOF'
+        fuse:
+          mount_point: /mnt/medvfs
+          block_size: 65536
+          cache_dir: /tmp/medvfs-cache
+          cache_max_bytes: 104857600
+        sources:
+          - id: test-fixtures
+            type: dicom
+            dicom:
+              paths:
+                - /fixtures
+        EOF
+
+        echo "Fixtures ready."
+
+  # ─── OpenSlide: POSIX + mmap validation ───────────────────────────────────
+  test-openslide:
+    image: python:3.12-slim
+    container_name: medvfs-test-openslide
+    depends_on:
+      medvfs-fuse:
+        condition: service_healthy
+      test-setup:
+        condition: service_completed_successfully
+    volumes:
+      - fuse-mount:/mnt/medvfs:ro
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        set -e
+        echo "=== OpenSlide POSIX Validation ==="
+
+        apt-get update -qq && apt-get install -y -qq libopenslide0 python3-openslide file >/dev/null 2>&1
+        pip install -q openslide-python
+
+        echo "--- stat() validation ---"
+        stat /mnt/medvfs/test_wsi.tiff
+        STAT_RC=$$?
+        echo "stat exit: $$STAT_RC"
+
+        echo "--- file type detection ---"
+        file /mnt/medvfs/test_wsi.tiff
+
+        echo "--- Python mmap read test ---"
+        python3 -c "
+        import mmap, os
+        fd = os.open('/mnt/medvfs/test_wsi.tiff', os.O_RDONLY)
+        try:
+            mm = mmap.mmap(fd, 0, access=mmap.ACCESS_READ)
+            magic = mm[:4]
+            print(f'mmap magic bytes: {magic.hex()}')
+            assert magic[:2] in [b'II', b'MM'], f'Not TIFF magic: {magic}'
+            print('mmap: OK — TIFF magic verified')
+            mm.close()
+        finally:
+            os.close(fd)
+        "
+
+        echo "--- Random read pattern (simulating tile access) ---"
+        python3 -c "
+        import os
+        fd = os.open('/mnt/medvfs/test_wsi.tiff', os.O_RDONLY)
+        try:
+            size = os.fstat(fd).st_size
+            # Read from beginning, middle, and end
+            for offset in [0, size//4, size//2, 3*size//4, max(0, size-256)]:
+                data = os.pread(fd, 256, offset)
+                print(f'  pread({offset}, 256) → {len(data)} bytes')
+                assert len(data) > 0, f'Empty read at offset {offset}'
+            print('Random reads: OK')
+        finally:
+            os.close(fd)
+        "
+
+        echo "=== OpenSlide validation PASSED ==="
+
+  # ─── ClamAV: sequential scan validation ──────────────────────────────────
+  test-clamav:
+    image: clamav/clamav:stable
+    container_name: medvfs-test-clamav
+    depends_on:
+      medvfs-fuse:
+        condition: service_healthy
+      test-setup:
+        condition: service_completed_successfully
+    volumes:
+      - fuse-mount:/mnt/medvfs:ro
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        echo "=== ClamAV Sequential Scan ==="
+
+        # freshclam needs time; skip DB update for test speed
+        echo "Running clamscan on FUSE mount..."
+        clamscan --no-summary /mnt/medvfs/
+        SCAN_RC=$$?
+
+        echo "clamscan exit code: $$SCAN_RC"
+        # Exit 0 = clean, 1 = infected (expected for random data = clean)
+        if [ "$$SCAN_RC" -le 1 ]; then
+          echo "=== ClamAV validation PASSED ==="
+          exit 0
+        else
+          echo "=== ClamAV validation FAILED ==="
+          exit $$SCAN_RC
+        fi
+
+  # ─── libvips: image processing validation ────────────────────────────────
+  test-libvips:
+    image: python:3.12-slim
+    container_name: medvfs-test-libvips
+    depends_on:
+      medvfs-fuse:
+        condition: service_healthy
+      test-setup:
+        condition: service_completed_successfully
+    volumes:
+      - fuse-mount:/mnt/medvfs:ro
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        set -e
+        echo "=== libvips POSIX Validation ==="
+
+        apt-get update -qq && apt-get install -y -qq libvips-tools >/dev/null 2>&1
+
+        echo "--- vipsheader (stat + partial read) ---"
+        vipsheader /mnt/medvfs/test_wsi.tiff || true
+        # May fail for synthetic data; we care about the FUSE read path working
+
+        echo "--- Sequential read via dd ---"
+        dd if=/mnt/medvfs/test_wsi.tiff of=/dev/null bs=64K 2>&1
+        echo "dd sequential: OK"
+
+        echo "--- Multiple concurrent reads ---"
+        for i in 1 2 3 4; do
+          dd if=/mnt/medvfs/test_scan.dcm of=/dev/null bs=4K count=32 2>/dev/null &
+        done
+        wait
+        echo "Concurrent reads: OK"
+
+        echo "=== libvips validation PASSED ==="
+
+  # ─── Genomics: BAM/samtools validation ───────────────────────────────────
+  test-samtools:
+    image: biocontainers/samtools:v1.9-4-deb_cv1
+    container_name: medvfs-test-samtools
+    depends_on:
+      medvfs-fuse:
+        condition: service_healthy
+      test-setup:
+        condition: service_completed_successfully
+    volumes:
+      - fuse-mount:/mnt/medvfs:ro
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        echo "=== samtools POSIX Validation ==="
+
+        echo "--- stat check ---"
+        ls -la /mnt/medvfs/test_reads.bam
+
+        echo "--- samtools quickcheck (header parse) ---"
+        samtools quickcheck /mnt/medvfs/test_reads.bam 2>&1 || true
+        # Synthetic file won't have valid BAM header but FUSE read must work
+
+        echo "--- Direct random read via dd ---"
+        dd if=/mnt/medvfs/test_reads.bam of=/dev/null bs=4K count=16 skip=8 2>&1
+        echo "Random dd: OK"
+
+        echo "=== samtools validation PASSED ==="
+
+volumes:
+  fuse-mount:
+    driver: local

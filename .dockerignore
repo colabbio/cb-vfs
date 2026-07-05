@@ -1,0 +1,13 @@
+# MedVFS Docker build context excludes
+.git
+.gitignore
+README.md
+docs/
+test/
+tests/
+deployments/
+schemas/
+*.md
+Makefile
+skaffold.yaml
+medvfs

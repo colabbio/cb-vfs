@@ -1,0 +1,99 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# MedVFS — Local Development Config (for docker-compose)
+# ──────────────────────────────────────────────────────────────────────────────
+# Uses MinIO (S3-compatible) as the storage backend.
+# All endpoints point to the docker-compose service names.
+# ──────────────────────────────────────────────────────────────────────────────
+
+version: "1"
+metadata:
+  name: dev-local-pipeline
+  description: "Local development pipeline with MinIO storage"
+
+storage:
+  type: emptydir
+  output_dir: /data/output
+
+# ─── Dataset Engine ───────────────────────────────────────────────────────────
+dataset:
+  splits:
+    source: "s3://medvfs-metadata/lung_v3/splits.csv"
+    patient_id_column: patient_id
+    split_column: split
+
+  patient_linker:
+    source: "s3://medvfs-metadata/lung_v3/patient_map.csv"
+    layout: unified
+
+  versioning:
+    enabled: true
+    dataset_id: dev_lung_cancer
+
+# ─── Output Sync ──────────────────────────────────────────────────────────────
+output:
+  local_dir: /data/output
+  sync:
+    enabled: true
+    target: "s3://medvfs-output/runs/dev-001/"
+    interval_seconds: 30
+    on_exit: true
+
+# ─── Mount ─────────────────────────────────────────────────────────────────────
+mount:
+  path: /data/vfs
+  readonly: false
+
+# ─── Serve ─────────────────────────────────────────────────────────────────────
+serve:
+  port: 8090
+
+# ─── Setup ─────────────────────────────────────────────────────────────────────
+setup:
+  parallelism: 2
+
+# ─── Sources ──────────────────────────────────────────────────────────────────
+
+sources:
+  # ── Genomics data from MinIO ────────────────────────────────────────────
+  - id: genomics
+    type: files
+    files:
+      storage: s3
+      bucket: medvfs-genomics
+      prefix: lung_study/
+      patterns:
+        - "*.bam"
+        - "*.bam.bai"
+      endpoint: http://minio:9000
+      region: us-east-1
+    materialize:
+      strategy: fuse_tree
+
+  # ── Metadata CSVs from MinIO ────────────────────────────────────────────
+  - id: metadata
+    type: files
+    files:
+      storage: s3
+      bucket: medvfs-metadata
+      prefix: lung_v3/metadata/
+      patterns:
+        - "*.csv"
+      endpoint: http://minio:9000
+      region: us-east-1
+    materialize:
+      strategy: fuse_tree
+
+  # ── Pretrained model weights from MinIO ─────────────────────────────────
+  - id: models
+    type: files
+    files:
+      storage: s3
+      bucket: medvfs-models
+      prefix: pretrained/resnet50/
+      patterns:
+        - "*.pt"
+        - "*.yaml"
+      endpoint: http://minio:9000
+      region: us-east-1
+    materialize:
+      strategy: fuse_tree

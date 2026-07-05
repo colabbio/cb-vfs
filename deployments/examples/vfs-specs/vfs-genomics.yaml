@@ -1,0 +1,78 @@
+# MedVFS — Genomics BAM/VCF Pipeline Example
+#
+# Scans a genomics repository (NFS, GCS, or S3) for alignment and
+# variant files. Produces a validated manifest CSV with patient IDs
+# extracted from filenames, ready for Nextflow WGS pipelines.
+#
+# Usage:
+#   medvfs setup --config vfs-genomics.yaml
+
+version: "1"
+metadata:
+  name: wgs-breast-cohort
+  namespace: genomics
+
+storage:
+  output_dir: ./output/genomics
+
+setup:
+  parallelism: 4
+  fail_fast: true
+
+sources:
+  # ── BAM/CRAM alignments from GCS ────────────────────────────────────
+  - id: alignments
+    type: genomics
+    genomics:
+      storage: gcs
+      bucket: hospital-genomics-prod
+      prefix: wgs/breast/alignments/
+      formats: [bam, cram]
+      validate_index: true    # ensures .bai/.crai exist for each file
+      patient_id_regex: "^([A-Z][0-9]{3,})_.*"
+      max_files: 0            # no limit
+    materialize:
+      output: alignments/manifest.csv
+
+  # ── VCF variants from S3 (MinIO) ────────────────────────────────────
+  - id: variants
+    type: genomics
+    genomics:
+      storage: s3
+      bucket: genomics-variants
+      endpoint: https://minio.hospital.local:9000   # S3-compatible
+      region: us-east-1
+      prefix: breast/somatic/
+      formats: [vcf]
+      validate_index: true    # ensures .tbi exist
+      patient_id_regex: "^([A-Z][0-9]{3,})_.*"
+    materialize:
+      output: variants/manifest.csv
+
+  # ── FASTQ raw reads from local NFS ──────────────────────────────────
+  - id: raw_reads
+    type: genomics
+    genomics:
+      storage: nfs
+      base_path: /mnt/nfs/genomics/fastq
+      formats: [fastq]
+      patient_id_regex: "^([A-Z][0-9]{3,})_.*"
+      max_files: 50           # limit for dev
+    materialize:
+      output: fastq/manifest.csv
+
+serve:
+  port: 8090
+  fuse:
+    mount_point: /data/vfs
+    cache_dir: /var/cache/medvfs
+    cache_max_gb: 200         # BAM files are large
+    block_size_mb: 4
+    prefetch:
+      enabled: true
+      strategy: format_aware  # activates BAM/CRAM magic header detection
+      concurrent_fetchers: 4
+
+mount:
+  path: /data/vfs
+  readonly: true

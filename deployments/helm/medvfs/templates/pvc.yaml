@@ -1,0 +1,17 @@
+{{- if and (ne .Values.mode "daemonset") (eq .Values.cache.type "pvc") }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "medvfs.fullname" . }}-cache
+  labels:
+    {{- include "medvfs.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml .Values.cache.pvc.accessModes | nindent 4 }}
+  {{- if .Values.cache.pvc.storageClass }}
+  storageClassName: {{ .Values.cache.pvc.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.cache.pvc.size }}
+{{- end }}

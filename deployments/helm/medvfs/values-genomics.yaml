@@ -1,0 +1,91 @@
+# MedVFS — Genomics Pipeline Deployment
+# Enables samtools sidecar for BAM/CRAM processing with GCS-backed data.
+#
+# Usage:
+#   helm install medvfs ./deployments/helm/medvfs \
+#     -f deployments/helm/medvfs/values-genomics.yaml \
+#     --set configInline="$(cat genomics-config.yaml)"
+
+mode: standalone
+
+image:
+  tag: "latest"
+
+vfs:
+  mountPoint: /data/vfs
+  cacheDir: /var/cache/medvfs
+  cacheMaxGB: 200         # Genomic files can be 50-200GB
+  blockSizeMB: 8          # Larger blocks for sequential BAM reads
+  prefetch:
+    enabled: true
+    strategy: format_aware
+    readAheadBlocks: 6     # Aggressive prefetch for sorted BAM
+    concurrency: 8
+
+cache:
+  type: pvc
+  pvc:
+    storageClass: ssd      # SSD for random access (BAM index lookups)
+    size: 500Gi
+
+resources:
+  requests:
+    cpu: 1
+    memory: 2Gi
+  limits:
+    cpu: "4"
+    memory: 8Gi
+
+sidecars:
+  enabled: true
+
+  samtools:
+    enabled: true
+    image: biocontainers/samtools:v1.9-4-deb_cv1
+    mode: batch
+    command: ["/bin/bash"]
+    args:
+      - -c
+      - |
+        echo "=== MedVFS Genomics Pipeline ==="
+        cd /data/vfs
+
+        for bam in *.bam; do
+          if [ -f "$bam" ]; then
+            echo "Processing: $bam"
+            samtools quickcheck "$bam" && echo "  ✓ Valid BAM"
+            samtools idxstats "$bam" 2>/dev/null || echo "  ⚠ Not indexed"
+            samtools flagstat "$bam" > "/output/${bam%.bam}.flagstat"
+            echo "  → flagstat written"
+          fi
+        done
+
+        echo "=== Pipeline complete ==="
+    resources:
+      requests:
+        cpu: 2
+        memory: 4Gi
+      limits:
+        cpu: "8"
+        memory: 16Gi
+    env:
+      - name: REF_GENOME
+        value: /data/reference/hg38.fa
+
+  # Custom: FastQC for read quality assessment
+  custom:
+    - name: fastqc
+      image: biocontainers/fastqc:v0.11.9_cv8
+      mode: batch
+      command: ["fastqc"]
+      args:
+        - --outdir=/output/qc
+        - --threads=4
+        - /data/vfs/*.fastq.gz
+      resources:
+        requests:
+          cpu: 1
+          memory: 2Gi
+        limits:
+          cpu: "4"
+          memory: 8Gi

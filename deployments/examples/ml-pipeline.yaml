@@ -1,0 +1,165 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# MedVFS — ML Training Pipeline Configuration
+# ──────────────────────────────────────────────────────────────────────────────
+#
+# This example shows a multimodal oncology pipeline combining:
+#   - WSI images from OMERO
+#   - Whole-genome sequencing from GCS
+#   - EHR data from FHIR R4
+#   - Static metadata and pretrained models from GCS
+#
+# The dataset engine:
+#   1. Links patient IDs across all sources (OMERO ↔ Genomics ↔ EHR)
+#   2. Splits data into train/val/test partitions
+#   3. Generates a deterministic SHA256 manifest for reproducibility
+#   4. Syncs pipeline outputs (checkpoints, predictions) to GCS
+#
+# Resulting VFS layout:
+#   /data/vfs/
+#   ├── train/
+#   │   └── LUNG-001/
+#   │       ├── wsi/slide_HE.svs
+#   │       ├── genomics/tumor_WGS.bam
+#   │       └── ehr/patients.csv
+#   ├── val/
+#   │   └── LUNG-002/...
+#   ├── test/
+#   │   └── LUNG-003/...
+#   ├── metadata/labels.csv
+#   ├── models/pretrained.pt
+#   └── .dataset.json               ← version manifest
+# ──────────────────────────────────────────────────────────────────────────────
+
+version: "1"
+metadata:
+  name: lung-cancer-multimodal
+  description: "WSI + Genomics + EHR training pipeline for NSCLC classification"
+
+storage:
+  type: emptydir
+  output_dir: /data/output
+
+# ─── ML Dataset Configuration ─────────────────────────────────────────────────
+dataset:
+  splits:
+    source: "gs://colabbio-ml/lung_v3/splits.csv"
+    patient_id_column: patient_id
+    split_column: split
+
+  patient_linker:
+    source: "gs://colabbio-ml/lung_v3/patient_map.csv"
+    layout: unified
+
+  versioning:
+    enabled: true
+    dataset_id: lung_cancer_v3
+
+# ─── Output Sync ──────────────────────────────────────────────────────────────
+output:
+  local_dir: /data/output
+  sync:
+    enabled: true
+    target: "gs://colabbio-ml/runs/experiment-042/output/"
+    interval_seconds: 60
+    on_exit: true
+
+# ─── Setup ─────────────────────────────────────────────────────────────────────
+setup:
+  parallelism: 4
+
+# ─── Mount ─────────────────────────────────────────────────────────────────────
+mount:
+  path: /data/vfs
+  readonly: false   # writable for output
+
+# ─── Serve API ─────────────────────────────────────────────────────────────────
+serve:
+  port: 8090
+
+# ─── Data Sources ──────────────────────────────────────────────────────────────
+
+sources:
+  # ── WSI Pathology Slides (OMERO) ─────────────────────────────────────────
+  - id: pathology_wsi
+    type: omero
+    endpoint: https://omero.hospital.org/api
+    auth:
+      type: bearer
+      secret_ref: env://OMERO_TOKEN
+    omero:
+      project_id: 42
+      extracts: [fuse_tree]
+    materialize:
+      strategy: fuse_tree
+
+  # ── Whole Genome Sequencing (GCS) ────────────────────────────────────────
+  - id: genomics_wgs
+    type: genomics
+    genomics:
+      storage: gcs
+      bucket: colabbio-genomics
+      prefix: lung_study/
+    materialize:
+      strategy: fuse_tree
+
+  # ── Dataset Metadata (GCS — Static Files) ───────────────────────────────
+  - id: metadata
+    type: files
+    files:
+      storage: gcs
+      bucket: colabbio-ml-datasets
+      prefix: lung_v3/metadata/
+      patterns:
+        - "*.csv"
+        - "*.parquet"
+        - "*.json"
+    materialize:
+      strategy: fuse_tree
+
+  # ── Pretrained Model Weights (GCS — Static Files) ───────────────────────
+  - id: pretrained_models
+    type: files
+    files:
+      storage: gcs
+      bucket: colabbio-ml-models
+      prefix: pretrained/resnet50/
+      patterns:
+        - "*.pt"
+        - "*.yaml"
+      max_files: 10
+    materialize:
+      strategy: fuse_tree
+
+  # ── EHR Clinical Data (FHIR R4) ─────────────────────────────────────────
+  - id: ehr_clinical
+    type: fhir
+    endpoint: https://fhir.hospital.org/r4
+    auth:
+      type: smart
+      secret_ref: k8s://medvfs-secrets/fhir-client
+    fhir:
+      resource: Patient
+      params:
+        _tag: "http://colabbio.org/study|lung-v3"
+    materialize:
+      output: ehr/patients.csv
+
+  # ── Lab Results (OMOP CDM) ──────────────────────────────────────────────
+  - id: ehr_labs
+    type: omop
+    endpoint: postgresql://omop.hospital.org:5432/cdm
+    auth:
+      type: basic
+      secret_ref: k8s://medvfs-secrets/omop-creds
+    omop:
+      queries:
+        - name: lab_results
+          sql: |
+            SELECT p.person_id, m.measurement_concept_id, m.value_as_number,
+                   m.measurement_date, c.concept_name
+            FROM measurement m
+            JOIN person p ON p.person_id = m.person_id
+            JOIN concept c ON c.concept_id = m.measurement_concept_id
+            WHERE p.person_id IN (SELECT person_id FROM cohort WHERE cohort_id = 42)
+    materialize:
+      output: ehr/lab_results.csv
