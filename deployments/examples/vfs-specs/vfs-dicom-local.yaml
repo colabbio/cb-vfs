@@ -1,0 +1,49 @@
+# MedVFS — DICOM Local Filesystem Example
+#
+# Scans a local directory for DICOM files arriving from a hospital's
+# PACS archive. Creates an organised symlink tree and metadata CSV.
+# Useful for edge deployments where DICOM files are pushed via
+# dcm4che or similar DICOM receivers.
+#
+# Usage:
+#   medvfs setup --config vfs-dicom-local.yaml
+#   medvfs serve --config vfs-dicom-local.yaml   # live monitoring
+
+version: "1"
+metadata:
+  name: dicom-edge-receiver
+  namespace: radiology
+
+storage:
+  output_dir: ./output/dicom-edge
+
+setup:
+  parallelism: 2
+  fail_fast: true
+
+sources:
+  - id: incoming_dicom
+    type: dicom
+    dicom:
+      local_watch_dir: /data/incoming/dicom    # where PACS pushes files
+      symlink_root: /data/organised/dicom      # organised tree output
+      extracts:
+        - metadata_csv     # patient/study/series CSV
+        - symlink_tree     # {PatientID}/{StudyDate}_{Modality}/{Series}/
+    materialize:
+      output: dicom/metadata.csv
+
+serve:
+  port: 8090
+  fuse:
+    mount_point: /data/vfs
+    cache_dir: /var/cache/medvfs
+    cache_max_gb: 20
+    prefetch:
+      enabled: true
+      strategy: format_aware   # activates DICOM PixelData tag scanner
+      read_ahead_blocks: 4
+
+mount:
+  path: /data/vfs
+  readonly: true

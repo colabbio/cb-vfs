@@ -1,0 +1,106 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MedVFS Skaffold — Dev workflow for MedVFS
+# Usage:
+#   skaffold dev                         → hot-reload en MicroK8s
+#   skaffold run -p standalone           → deploy standalone mode
+#   skaffold run -p sidecar              → deploy sidecar con openslide
+#   skaffold run -p pathology            → deploy para estudio patología
+#   skaffold build                       → solo build + push image
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: skaffold/v4beta13
+kind: Config
+metadata:
+  name: medvfs
+
+build:
+  local:
+    push: false              # MicroK8s importa images directamente
+  artifacts:
+    - image: colabbio/medvfs
+      docker:
+        dockerfile: Dockerfile
+      sync:
+        manual:
+          # Hot-reload config changes sin rebuild
+          - src: "deployments/helm/medvfs/values*.yaml"
+            dest: /config/
+
+deploy:
+  helm:
+    releases:
+      - name: medvfs
+        namespace: colabbio-dev
+        chartPath: deployments/helm/medvfs
+        valuesFiles:
+          - deployments/helm/medvfs/values.yaml
+        setValues:
+          image.repository: colabbio/medvfs
+          image.tag: ""      # Skaffold inyecta el tag automáticamente
+        createNamespace: true
+        wait: true
+
+profiles:
+  # ─── Standalone (single deployment, no FUSE host mount) ───────────────────
+  - name: standalone
+    patches:
+      - op: replace
+        path: /deploy/helm/releases/0/setValues
+        value:
+          image.repository: colabbio/medvfs
+          image.tag: ""
+          mode: standalone
+
+  # ─── Sidecar mode (MedVFS + OpenSlide) ────────────────────────────────────
+  - name: sidecar
+    patches:
+      - op: replace
+        path: /deploy/helm/releases/0/setValues
+        value:
+          image.repository: colabbio/medvfs
+          image.tag: ""
+          mode: sidecar
+          sidecars.enabled: "true"
+          sidecars.openslide.enabled: "true"
+
+  # ─── Pathology study (sidecar + pathology values) ─────────────────────────
+  - name: pathology
+    patches:
+      - op: replace
+        path: /deploy/helm/releases/0/valuesFiles
+        value:
+          - deployments/helm/medvfs/values.yaml
+          - deployments/helm/medvfs/values-pathology.yaml
+      - op: replace
+        path: /deploy/helm/releases/0/setValues
+        value:
+          image.repository: colabbio/medvfs
+          image.tag: ""
+
+  # ─── Genomics study ──────────────────────────────────────────────────────
+  - name: genomics
+    patches:
+      - op: replace
+        path: /deploy/helm/releases/0/valuesFiles
+        value:
+          - deployments/helm/medvfs/values.yaml
+          - deployments/helm/medvfs/values-genomics.yaml
+      - op: replace
+        path: /deploy/helm/releases/0/setValues
+        value:
+          image.repository: colabbio/medvfs
+          image.tag: ""
+
+  # ─── Production (daemonset + metrics) ─────────────────────────────────────
+  - name: prod
+    patches:
+      - op: replace
+        path: /deploy/helm/releases/0/namespace
+        value: colabbio-prod
+      - op: replace
+        path: /deploy/helm/releases/0/setValues
+        value:
+          image.repository: ghcr.io/colabbio/medvfs
+          image.tag: ""
+          mode: daemonset
+          metrics.enabled: "true"
+          metrics.serviceMonitor.enabled: "true"

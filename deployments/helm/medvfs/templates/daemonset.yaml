@@ -1,0 +1,49 @@
+{{- if eq .Values.mode "daemonset" }}
+# ─── DaemonSet Mode ────────────────────────────────────────────────────────────
+# Runs MedVFS on every selected node. The FUSE mount is exposed to the host
+# via Bidirectional mount propagation, making /data/medvfs accessible to all
+# pods on that node.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "medvfs.fullname" . }}
+  labels:
+    {{- include "medvfs.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "medvfs.selectorLabels" . | nindent 6 }}
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        {{- include "medvfs.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "medvfs.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        {{- include "medvfs.containerSpec" . | nindent 8 }}
+      volumes:
+        {{- include "medvfs.volumeSpec" . | nindent 8 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: 30
+{{- end }}

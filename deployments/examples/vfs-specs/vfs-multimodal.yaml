@@ -1,0 +1,146 @@
+# MedVFS — Multi-Source RWE Pipeline Example
+#
+# Combines OMOP clinical data, FHIR demographics, OMERO pathology images,
+# Orthanc radiology (DICOMweb), and GCS-hosted genomics into a single
+# virtualised mount for multi-modal ML training.
+#
+# This is the "full stack" configuration for a Real-World Evidence study.
+#
+# Usage:
+#   medvfs setup  --config vfs-multimodal.yaml   # batch materialise
+#   medvfs serve  --config vfs-multimodal.yaml   # FUSE daemon
+
+version: "1"
+metadata:
+  name: multimodal-breast-cancer-rwe
+  namespace: oncology
+  run_id: study-2025-BC-001
+
+storage:
+  type: pvc
+  pvc_name: medvfs-data
+  subpath: study-2025-BC-001
+
+setup:
+  parallelism: 8
+  fail_fast: false
+
+sources:
+  # ── Clinical records (OMOP CDM) ──────────────────────────────────────
+  - id: clinical_conditions
+    type: omop
+    dsn_secret: k8s://colabbio/omop-dsn
+    query: |
+      SELECT p.person_id, p.year_of_birth, p.gender_concept_id,
+             c.condition_concept_id, c.condition_start_date
+      FROM person p
+      JOIN condition_occurrence c ON p.person_id = c.person_id
+      WHERE c.condition_concept_id IN (4112853, 436665)
+      ORDER BY p.person_id
+    materialize:
+      output: clinical/conditions.csv
+
+  - id: clinical_drugs
+    type: omop
+    dsn_secret: k8s://colabbio/omop-dsn
+    query: |
+      SELECT person_id, drug_concept_id, drug_exposure_start_date,
+             quantity, days_supply
+      FROM drug_exposure
+      WHERE person_id IN (
+        SELECT person_id FROM condition_occurrence
+        WHERE condition_concept_id IN (4112853, 436665)
+      )
+    materialize:
+      output: clinical/drugs.csv
+
+  # ── FHIR demographics ────────────────────────────────────────────────
+  - id: demographics
+    type: fhir
+    endpoint: https://fhir.hospital.org/r4
+    auth:
+      type: smart_on_fhir
+      client_id: medvfs-rwe
+      client_secret: env://FHIR_CLIENT_SECRET
+      token_url: https://auth.hospital.org/token
+      scope: "system/Patient.read system/Observation.read"
+    fhir:
+      resource: Patient
+      params:
+        gender: female
+        birthdate: "ge1960"
+      page_size: 200
+      fields:
+        - id
+        - name.0.family
+        - birthDate
+        - address.0.postalCode
+    materialize:
+      output: demographics/patients.csv
+
+  # ── Pathology WSI (OMERO) ────────────────────────────────────────────
+  - id: wsi_slides
+    type: omero
+    endpoint: https://omero.hospital.org
+    auth:
+      type: bearer
+      secret_ref: k8s://colabbio/omero-token
+    omero:
+      project_id: 42
+      image_filter:
+        tag: "breast_cancer"
+      extracts: [metadata_csv, thumbnail]
+      thumbnail_size: 512
+    materialize:
+      output: pathology/metadata.csv
+      download_dir: pathology/thumbnails
+
+  # ── Radiology CT (DICOMweb via Orthanc) ──────────────────────────────
+  - id: radiology_ct
+    type: orthanc
+    endpoint: https://pacs.hospital.org
+    auth:
+      type: basic
+      secret_ref: k8s://colabbio/pacs-credentials
+    orthanc:
+      study_filter:
+        modality: CT
+        study_date_from: "20240101"
+        study_date_to: "20241231"
+      extracts: [metadata_csv, series_manifest]
+      max_studies: 500
+    materialize:
+      output: radiology/studies.csv
+      download_dir: radiology/dicom
+
+  # ── Genomics (GCS) ──────────────────────────────────────────────────
+  - id: genomics_wgs
+    type: genomics
+    genomics:
+      storage: gcs
+      bucket: hospital-genomics-prod
+      prefix: oncology/breast/
+      formats: [bam, vcf]
+      validate_index: true
+      patient_id_regex: "^([A-Z0-9]+)_.*"
+      max_files: 0    # no limit
+    materialize:
+      output: genomics/manifest.csv
+
+serve:
+  port: 8090
+  fuse:
+    mount_point: /data/vfs
+    cache_dir: /var/cache/medvfs
+    cache_max_gb: 100
+    block_size_mb: 4
+    prefetch:
+      enabled: true
+      strategy: format_aware
+      warmup_percent: 20
+      concurrent_fetchers: 8
+      read_ahead_blocks: 3
+
+mount:
+  path: /data/vfs
+  readonly: true

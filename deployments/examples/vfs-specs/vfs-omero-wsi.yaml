@@ -1,0 +1,61 @@
+# MedVFS — OMERO WSI Pathology Example
+#
+# Virtualises Whole Slide Images from an OMERO.web server.
+# The FUSE mount exposes gigapixel WSI files as local paths that
+# ML containers (e.g., HistoCartography, CLAM) can read directly.
+#
+# Usage:
+#   medvfs serve --config vfs-omero-wsi.yaml
+
+version: "1"
+metadata:
+  name: breast-pathology-wsi
+  namespace: pathology
+
+storage:
+  type: emptydir
+
+setup:
+  parallelism: 4
+
+sources:
+  - id: wsi_breast
+    type: omero
+    endpoint: https://omero.hospital.org
+    auth:
+      type: bearer
+      secret_ref: env://OMERO_TOKEN
+    omero:
+      project_id: 42
+      image_filter:
+        tag: "breast_cancer"
+      extracts:
+        - metadata_csv
+        - thumbnail
+      thumbnail_size: 512
+      max_images: 200
+      metadata_fields:
+        - diagnosis
+        - stain_type
+        - magnification
+    materialize:
+      output: pathology/metadata.csv
+      download_dir: pathology/thumbnails
+
+serve:
+  port: 8090
+  fuse:
+    mount_point: /data/vfs
+    cache_dir: /var/cache/medvfs
+    cache_max_gb: 100          # WSI tiles can be large
+    block_size_mb: 4
+    prefetch:
+      enabled: true
+      strategy: format_aware   # activates TIFF IFD parser for SVS/NDPI
+      warmup_percent: 30       # pre-cache headers of smallest 30% of files
+      concurrent_fetchers: 8   # high parallelism for tile downloads
+      read_ahead_blocks: 4
+
+mount:
+  path: /data/vfs
+  readonly: true

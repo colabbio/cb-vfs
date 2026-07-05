@@ -1,0 +1,292 @@
+# MedVFS Helm Chart — Default Values
+# Override these in your values-<env>.yaml or via --set flags.
+
+# ─── Image ─────────────────────────────────────────────────────────────────────
+image:
+  repository: ghcr.io/colabbio/medvfs
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# ─── Deployment Mode ───────────────────────────────────────────────────────────
+# Options: "daemonset" | "sidecar" | "standalone"
+#   daemonset  — Runs on every node (or selected nodes), mounts FUSE to host.
+#                Best for multi-pod access on the same node.
+#   sidecar    — Injected alongside the ML pod, shares a FUSE mount via emptyDir.
+#                Best for single-pipeline isolation.
+#   standalone — Single Deployment with FUSE mount. Good for dev/testing.
+mode: "daemonset"
+
+# ─── VFS Configuration ────────────────────────────────────────────────────────
+vfs:
+  # FUSE mount point (inside the container / on the host for DaemonSet)
+  mountPoint: /data/vfs
+  # Block cache directory
+  cacheDir: /var/cache/medvfs
+  # Maximum cache size in GB
+  cacheMaxGB: 50
+  # Block size in MB (4MB default, aligned to DICOM/TIFF IFD)
+  blockSizeMB: 4
+  # Serve API port
+  port: 8090
+  # Prefetch configuration
+  prefetch:
+    enabled: true
+    strategy: format_aware  # "sequential" | "format_aware" | "manifest"
+    readAheadBlocks: 3
+    concurrency: 4
+
+# ─── Config file (mounted as ConfigMap) ───────────────────────────────────────
+# You can inline your vfs.yaml here or reference an existing ConfigMap.
+configInline: ""
+# Example:
+#   configInline: |
+#     sources:
+#       - id: hospital-pacs
+#         type: orthanc
+#         endpoint: https://pacs.hospital.org
+#         orthanc:
+#           study_filter:
+#             modality: CT
+existingConfigMap: ""
+
+# ─── Cache Volume ──────────────────────────────────────────────────────────────
+cache:
+  # Use a hostPath (DaemonSet) or PVC (standalone/sidecar)
+  type: hostPath  # "hostPath" | "pvc" | "emptyDir"
+  hostPath: /var/cache/medvfs
+  pvc:
+    storageClass: ""
+    size: 100Gi
+    accessModes:
+      - ReadWriteOnce
+
+# ─── FUSE host mount (DaemonSet mode) ─────────────────────────────────────────
+hostFuse:
+  # Path on the host where the FUSE filesystem is mounted
+  mountPath: /data/medvfs
+  # Propagation: Bidirectional is required for FUSE to be visible to other pods
+  mountPropagation: Bidirectional
+
+# ─── Resources ─────────────────────────────────────────────────────────────────
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "2"
+    memory: 2Gi
+
+# ─── Security ─────────────────────────────────────────────────────────────────
+# FUSE requires privileged access or CAP_SYS_ADMIN
+securityContext:
+  privileged: true
+  # Alternative (less permissive):
+  # capabilities:
+  #   add: ["SYS_ADMIN"]
+  # seccompProfile:
+  #   type: Unconfined
+
+podSecurityContext:
+  fsGroup: 1000
+
+# ─── Node selection (DaemonSet mode) ──────────────────────────────────────────
+nodeSelector: {}
+  # e.g., node-role.kubernetes.io/ml: "true"
+
+tolerations: []
+affinity: {}
+
+# ─── Service ───────────────────────────────────────────────────────────────────
+service:
+  type: ClusterIP
+  port: 8090
+
+# ─── Health ────────────────────────────────────────────────────────────────────
+healthCheck:
+  enabled: true
+  path: /healthz
+  port: 8090
+  initialDelaySeconds: 10
+  periodSeconds: 30
+
+# ─── ServiceAccount ────────────────────────────────────────────────────────────
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# ─── Metrics (Prometheus) ─────────────────────────────────────────────────────
+metrics:
+  enabled: false
+  port: 9090
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+
+# ─── Sidecar Containers ───────────────────────────────────────────────────────
+# Clinical tool containers that share the MedVFS FUSE mount.
+# Enable presets or define custom sidecars. All sidecars get the VFS mount
+# at the path defined by vfs.mountPoint (default: /data/vfs).
+#
+# Modes:
+#   - "batch": Container runs to completion (Job-style). Good for ClamAV scans,
+#              format conversion, batch inference.
+#   - "service": Container stays running (long-lived). Good for tile servers,
+#                processing APIs, ML inference endpoints.
+#   - "init": Runs before the main containers start. Good for data validation.
+
+sidecars:
+  # ── Enable sidecar injection ──
+  enabled: false
+
+  # ── Preset: OpenSlide (WSI tile server / analysis) ──
+  openslide:
+    enabled: false
+    image: quay.io/biocontainers/openslide-python:1.3.1--py312
+    mode: service
+    command: []    # Override for custom pipeline
+    args: []
+    port: 5000     # If running as tile API server
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "4"
+        memory: 8Gi
+    env: []
+    # Example custom command:
+    #   command: ["python3"]
+    #   args: ["/pipeline/tile_extract.py", "--input", "/data/vfs", "--output", "/output"]
+
+  # ── Preset: ClamAV (antivirus scanning) ──
+  clamav:
+    enabled: false
+    image: clamav/clamav:1.4
+    mode: batch
+    command: ["clamscan"]
+    args: ["-r", "--no-summary", "/data/vfs"]
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: "2"
+        memory: 4Gi
+    env: []
+
+  # ── Preset: libvips (high-speed image processing) ──
+  libvips:
+    enabled: false
+    image: ghcr.io/libvips/libvips:8.16
+    mode: batch
+    command: []
+    args: []
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "4"
+        memory: 8Gi
+    env: []
+
+  # ── Preset: samtools (genomics BAM/CRAM) ──
+  samtools:
+    enabled: false
+    image: biocontainers/samtools:v1.9-4-deb_cv1
+    mode: batch
+    command: []
+    args: []
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: "2"
+        memory: 4Gi
+    env: []
+
+  # ── Custom sidecars (list of arbitrary containers) ──
+  # Each entry follows Kubernetes container spec with additional 'mode' field.
+  custom: []
+  # Example:
+  #   - name: my-processor
+  #     image: myregistry/my-tool:latest
+  #     mode: batch
+  #     command: ["python3", "/run.py"]
+  #     args: ["--vfs-path", "/data/vfs"]
+  #     resources:
+  #       requests:
+  #         cpu: 500m
+  #         memory: 1Gi
+  #     env:
+  #       - name: MODEL_PATH
+  #         value: "/models/latest"
+  #     volumeMounts: []  # Additional mounts beyond the VFS
+
+# ─── ML Dataset Configuration ─────────────────────────────────────────────────
+# These settings control how files are organized for ML training/validation/test.
+dataset:
+  # ── Dataset Splits (G2) ──
+  # Reorganizes the VFS tree into train/val/test partitions.
+  splits:
+    enabled: false
+    # Path to CSV with patient-to-split mapping (local or gs:// URI)
+    source: ""
+    # Column names in the CSV (defaults: patient_id, split)
+    patientIdColumn: "patient_id"
+    splitColumn: "split"
+  # Example:
+  #   splits:
+  #     enabled: true
+  #     source: "gs://my-bucket/splits.csv"
+
+  # ── Patient Linking (G4) ──
+  # Consolidates heterogeneous patient IDs across sources into a canonical ID.
+  patientLinker:
+    enabled: false
+    # Path to CSV with ID mapping: canonical_id, omero_id, genomics_id, ...
+    source: ""
+    # Layout mode: "unified" merges all sources under canonical/<modality>/
+    layout: "unified"
+  # Example:
+  #   patientLinker:
+  #     enabled: true
+  #     source: "gs://my-bucket/patient_map.csv"
+  #     layout: unified
+
+  # ── Dataset Versioning (G5) ──
+  # Generates a .dataset.json manifest with deterministic SHA256 for reproducibility.
+  versioning:
+    enabled: false
+    datasetId: ""
+  # Example:
+  #   versioning:
+  #     enabled: true
+  #     datasetId: "lung_cancer_v3"
+
+# ─── Output Synchronization (G3) ──────────────────────────────────────────────
+# Writable output directory with periodic sync to cloud storage.
+output:
+  # Local directory for pipeline outputs (checkpoints, predictions, logs)
+  localDir: /data/output
+  sync:
+    enabled: false
+    # Target cloud URI (supports gs:// and s3://)
+    target: ""
+    # Sync interval in seconds (0 = sync only on exit)
+    intervalSeconds: 60
+    # Always sync remaining files on container shutdown
+    onExit: true
+  # Example:
+  #   sync:
+  #     enabled: true
+  #     target: "gs://my-bucket/runs/experiment-001/"
+  #     intervalSeconds: 30
+  #     onExit: true
+

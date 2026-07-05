@@ -1,0 +1,83 @@
+{{- $mode := .Values.mode -}}
+╔══════════════════════════════════════════════════════════════╗
+║              MedVFS — Medical Virtual File System            ║
+╚══════════════════════════════════════════════════════════════╝
+
+  Deployment mode:  {{ $mode }}
+  VFS mount point:  {{ .Values.vfs.mountPoint }}
+  API port:         {{ .Values.vfs.port }}
+  Cache max:        {{ .Values.vfs.cacheMaxGB }} GB
+  Prefetch:         {{ .Values.vfs.prefetch.strategy }}
+
+{{- if eq $mode "daemonset" }}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  DaemonSet Mode
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  MedVFS is running on every selected node. The FUSE mount at:
+
+    {{ .Values.hostFuse.mountPath }}
+
+  is visible to all pods on the same node via Bidirectional
+  mount propagation. Your ML pods can mount this path using a
+  hostPath volume:
+
+    volumes:
+      - name: vfs
+        hostPath:
+          path: {{ .Values.hostFuse.mountPath }}
+          type: Directory
+    containers:
+      - name: training
+        volumeMounts:
+          - name: vfs
+            mountPath: /data/vfs
+            readOnly: true
+
+{{- else if eq $mode "sidecar" }}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Sidecar Mode
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  MedVFS is running as a sidecar container. The FUSE mount at:
+
+    {{ .Values.vfs.mountPoint }}
+
+  is shared with your ML container via an emptyDir volume.
+  Add your ML container to the same pod and mount the shared
+  volume at the same path.
+
+{{- else }}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Standalone Mode
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  MedVFS is running as a standalone Deployment. Access the
+  virtualised files via the HTTP proxy API.
+
+{{- end }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Verify Installation
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  1. Check pods are running:
+
+     kubectl get pods -l app.kubernetes.io/name={{ include "medvfs.name" . }}
+
+  2. View the file manifest:
+
+     kubectl port-forward svc/{{ include "medvfs.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+     curl http://localhost:{{ .Values.service.port }}/manifest | jq .
+
+  3. Check cache statistics:
+
+     curl http://localhost:{{ .Values.service.port }}/stats
+
+  4. Stream live events:
+
+     curl -N http://localhost:{{ .Values.service.port }}/events
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Documentation: https://github.com/colabbio/medvfs
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

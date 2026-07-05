@@ -1,0 +1,493 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/colabbio/cb-vfs/schemas/vfs-config.schema.json",
+  "title": "MedVFS Configuration",
+  "description": "Schema for MedVFS vfs.yaml configuration files. Validates both setup and serve mode configurations.",
+  "type": "object",
+  "required": ["version", "metadata", "sources"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "1",
+      "description": "Schema version. Currently only '1' is supported."
+    },
+    "metadata": {
+      "$ref": "#/$defs/Metadata"
+    },
+    "storage": {
+      "$ref": "#/$defs/Storage"
+    },
+    "setup": {
+      "$ref": "#/$defs/Setup"
+    },
+    "serve": {
+      "$ref": "#/$defs/Serve"
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/Source"
+      },
+      "description": "List of data sources to materialise or virtualise."
+    },
+    "mount": {
+      "$ref": "#/$defs/Mount"
+    }
+  },
+  "$defs": {
+    "Metadata": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$",
+          "description": "Unique name for this VFS configuration. Used as directory name in output."
+        },
+        "version": {
+          "type": "string",
+          "description": "Optional version label (e.g. '2024-Q1', 'v1.2')."
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of the dataset."
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Key-value labels for metadata (e.g. project, owner, study)."
+        }
+      }
+    },
+    "Storage": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["emptydir", "hostpath", "pvc"],
+          "description": "Storage backend for materialised data."
+        },
+        "path": {
+          "type": "string",
+          "description": "Required for hostpath type. Absolute path on the host."
+        },
+        "claim_name": {
+          "type": "string",
+          "description": "Required for pvc type. Name of the PersistentVolumeClaim."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "hostpath" } } },
+          "then": { "required": ["path"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "pvc" } } },
+          "then": { "required": ["claim_name"] }
+        }
+      ]
+    },
+    "Setup": {
+      "type": "object",
+      "properties": {
+        "parallelism": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32,
+          "default": 4,
+          "description": "Maximum number of adapters to execute in parallel."
+        },
+        "fail_fast": {
+          "type": "boolean",
+          "default": true,
+          "description": "If true, abort all adapters when any single adapter fails."
+        },
+        "timeout": {
+          "type": "string",
+          "pattern": "^[0-9]+(s|m|h)$",
+          "default": "30m",
+          "description": "Maximum time for the entire setup phase (e.g. '30m', '2h')."
+        }
+      }
+    },
+    "Serve": {
+      "type": "object",
+      "properties": {
+        "fuse": {
+          "$ref": "#/$defs/FuseConfig"
+        },
+        "http": {
+          "$ref": "#/$defs/HttpConfig"
+        },
+        "live_monitoring": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable StreamingAdapter-based live monitoring (e.g. fsnotify for DICOM)."
+        }
+      }
+    },
+    "FuseConfig": {
+      "type": "object",
+      "properties": {
+        "mount_point": {
+          "type": "string",
+          "default": "/data/vfs",
+          "description": "Path where the FUSE filesystem is mounted."
+        },
+        "cache_dir": {
+          "type": "string",
+          "default": "/var/cache/medvfs",
+          "description": "Directory for block cache storage."
+        },
+        "cache_max_gb": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000,
+          "default": 50,
+          "description": "Maximum cache size in GB. LRU eviction when exceeded."
+        },
+        "block_size_mb": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64,
+          "default": 4,
+          "description": "Block size in MB. 4 MB is optimal for DICOM/TIFF IFD alignment."
+        },
+        "prefetch": {
+          "$ref": "#/$defs/PrefetchConfig"
+        }
+      }
+    },
+    "PrefetchConfig": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the prefetch engine."
+        },
+        "strategy": {
+          "type": "string",
+          "enum": ["sequential", "format_aware", "manifest"],
+          "default": "format_aware",
+          "description": "Prefetch strategy: sequential (L1), format_aware (L1+L2), manifest (L1+L2+L3)."
+        },
+        "read_ahead_blocks": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "default": 3,
+          "description": "Number of blocks to read ahead in L1 sequential prefetch."
+        },
+        "concurrent_fetchers": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64,
+          "default": 4,
+          "description": "Number of parallel workers for background block fetching."
+        },
+        "warmup_percent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 20,
+          "description": "Percentage of files whose header (block 0) is pre-fetched at startup (L3)."
+        }
+      }
+    },
+    "HttpConfig": {
+      "type": "object",
+      "properties": {
+        "port": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 65535,
+          "default": 8090,
+          "description": "Port for the HTTP API (health, manifest, stats, events)."
+        }
+      }
+    },
+    "Mount": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Base path where the ML container sees materialised/virtualised data."
+        },
+        "readonly": {
+          "type": "boolean",
+          "default": true,
+          "description": "Mount data as read-only for the consuming container."
+        }
+      }
+    },
+    "Source": {
+      "type": "object",
+      "required": ["id", "type"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$",
+          "description": "Unique identifier for this source."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["omop", "fhir", "omero", "orthanc", "dicom", "genomics"],
+          "description": "Adapter type to use for this source."
+        },
+        "endpoint": {
+          "type": "string",
+          "format": "uri",
+          "description": "Server endpoint URL (required for fhir, omero, orthanc)."
+        },
+        "dsn": {
+          "type": "string",
+          "description": "Direct database connection string (OMOP, dev only)."
+        },
+        "dsn_secret": {
+          "type": "string",
+          "description": "Secret reference to DSN (OMOP, production)."
+        },
+        "auth": {
+          "$ref": "#/$defs/Auth"
+        },
+        "query": {
+          "type": "string",
+          "description": "SQL query for OMOP adapter."
+        },
+        "fhir": {
+          "$ref": "#/$defs/FhirConfig"
+        },
+        "omero": {
+          "$ref": "#/$defs/OmeroConfig"
+        },
+        "orthanc": {
+          "$ref": "#/$defs/OrthancConfig"
+        },
+        "dicom": {
+          "$ref": "#/$defs/DicomConfig"
+        },
+        "genomics": {
+          "$ref": "#/$defs/GenomicsConfig"
+        },
+        "materialize": {
+          "$ref": "#/$defs/Materialize"
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "omop" } } },
+          "then": { "required": ["query"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "fhir" } } },
+          "then": { "required": ["endpoint"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "omero" } } },
+          "then": { "required": ["endpoint"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "orthanc" } } },
+          "then": { "required": ["endpoint"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "dicom" } } },
+          "then": { "required": ["dicom"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "genomics" } } },
+          "then": { "required": ["genomics"] }
+        }
+      ]
+    },
+    "Auth": {
+      "type": "object",
+      "properties": {
+        "secret_ref": {
+          "type": "string",
+          "description": "Secret reference URI: k8s://ns/secret/key, env://VAR, file:///path"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["basic", "bearer", "api_key", "oauth2_client_credentials", "smart_on_fhir"],
+          "description": "Authentication method."
+        }
+      }
+    },
+    "FhirConfig": {
+      "type": "object",
+      "properties": {
+        "resources": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "FHIR resource types to query (e.g. Patient, Observation)."
+        },
+        "query_params": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Query parameters to pass to the FHIR search."
+        },
+        "page_size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "default": 100,
+          "description": "Number of resources per page in paginated queries."
+        }
+      }
+    },
+    "OmeroConfig": {
+      "type": "object",
+      "properties": {
+        "project": {
+          "type": "string",
+          "description": "OMERO project name to query."
+        },
+        "dataset": {
+          "type": "string",
+          "description": "OMERO dataset name to query."
+        },
+        "extracts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["metadata_csv", "thumbnails", "full_images", "annotations"]
+          },
+          "description": "Types of data to extract from OMERO."
+        },
+        "thumbnail_size": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 1024,
+          "default": 256,
+          "description": "Thumbnail dimension in pixels (square)."
+        }
+      }
+    },
+    "OrthancConfig": {
+      "type": "object",
+      "properties": {
+        "study_filter": {
+          "type": "object",
+          "properties": {
+            "modality": {
+              "type": "string",
+              "description": "DICOM modality filter (e.g. CT, MR, DX)."
+            },
+            "study_date_from": {
+              "type": "string",
+              "pattern": "^[0-9]{8}$",
+              "description": "Start date filter YYYYMMDD."
+            },
+            "study_date_to": {
+              "type": "string",
+              "pattern": "^[0-9]{8}$",
+              "description": "End date filter YYYYMMDD."
+            },
+            "patient_id_prefix": {
+              "type": "string",
+              "description": "PatientID prefix filter."
+            }
+          }
+        },
+        "extracts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["metadata_csv", "series_manifest", "dicom_files"]
+          },
+          "description": "Types of data to extract from the DICOM server."
+        },
+        "max_studies": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 100,
+          "description": "Maximum number of studies to retrieve."
+        }
+      }
+    },
+    "DicomConfig": {
+      "type": "object",
+      "required": ["local_watch_dir"],
+      "properties": {
+        "local_watch_dir": {
+          "type": "string",
+          "description": "Directory to scan recursively for .dcm files."
+        },
+        "symlink_root": {
+          "type": "string",
+          "description": "Directory where organised symlinks are created."
+        },
+        "extracts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["metadata_csv", "symlink_tree", "fuse_tree"]
+          },
+          "description": "Types of output to generate."
+        }
+      }
+    },
+    "GenomicsConfig": {
+      "type": "object",
+      "required": ["storage", "base_path", "formats"],
+      "properties": {
+        "storage": {
+          "type": "string",
+          "enum": ["nfs", "s3", "gcs", "azure_blob"],
+          "description": "Storage backend where genomic files are located."
+        },
+        "base_path": {
+          "type": "string",
+          "description": "Root path to scan for genomic files."
+        },
+        "formats": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["bam", "cram", "vcf", "fastq", "bed", "bigwig"]
+          },
+          "description": "Genomic file formats to discover."
+        },
+        "validate_index": {
+          "type": "boolean",
+          "default": false,
+          "description": "Verify that index files (.bai, .crai, .tbi) exist for each data file."
+        },
+        "patient_id_regex": {
+          "type": "string",
+          "format": "regex",
+          "description": "Regex to extract patient_id from filename (first capture group)."
+        },
+        "s3_endpoint": {
+          "type": "string",
+          "format": "uri",
+          "description": "Custom S3 endpoint (e.g. MinIO). Only for storage: s3."
+        },
+        "s3_region": {
+          "type": "string",
+          "description": "S3 region. Only for storage: s3."
+        }
+      }
+    },
+    "Materialize": {
+      "type": "object",
+      "required": ["output"],
+      "properties": {
+        "output": {
+          "type": "string",
+          "description": "Relative path (from output_dir) for the materialised output file."
+        },
+        "format": {
+          "type": "string",
+          "enum": ["csv", "json", "ndjson", "parquet"],
+          "default": "csv",
+          "description": "Output format for materialised data."
+        }
+      }
+    }
+  }
+}

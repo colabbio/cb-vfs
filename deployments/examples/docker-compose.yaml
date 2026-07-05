@@ -1,0 +1,205 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# MedVFS — Local Development Environment
+# ──────────────────────────────────────────────────────────────────────────────
+#
+# Starts a complete local stack for developing and testing MedVFS ML pipelines:
+#   - MinIO (S3-compatible object storage)
+#   - MedVFS (FUSE virtualisation + dataset engine)
+#   - PyTorch (dummy training container)
+#
+# Usage:
+#   # Start everything
+#   docker compose up -d
+#
+#   # Seed MinIO with test data
+#   docker compose exec minio-init sh -c "echo done"
+#
+#   # View MedVFS logs
+#   docker compose logs -f medvfs
+#
+#   # Check dataset manifest
+#   curl http://localhost:8090/dataset | jq .
+#
+#   # Access MinIO console
+#   open http://localhost:9001  (user: minioadmin / pass: minioadmin)
+#
+#   # Stop
+#   docker compose down -v
+#
+# ──────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ── MinIO (S3-compatible storage) ──────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: medvfs-minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"    # S3 API
+      - "9001:9001"    # Web Console
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── MinIO Seed (creates buckets + test data) ───────────────────────────────
+  minio-init:
+    image: minio/mc:latest
+    container_name: medvfs-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        set -e
+
+        # Configure MinIO client
+        mc alias set local http://minio:9000 minioadmin minioadmin
+
+        # Create buckets
+        mc mb --ignore-existing local/medvfs-genomics
+        mc mb --ignore-existing local/medvfs-metadata
+        mc mb --ignore-existing local/medvfs-models
+        mc mb --ignore-existing local/medvfs-output
+
+        # ── Seed: Genomics (dummy BAM headers) ──────────────────────────
+        for patient in LUNG-001 LUNG-002 LUNG-003 LUNG-004 LUNG-005; do
+          echo "BAM_HEADER: patient=$${patient}, genome=GRCh38" | \
+            mc pipe local/medvfs-genomics/lung_study/$${patient}/tumor_WGS.bam
+          echo "BAI_INDEX: patient=$${patient}" | \
+            mc pipe local/medvfs-genomics/lung_study/$${patient}/tumor_WGS.bam.bai
+        done
+
+        # ── Seed: Metadata CSVs ─────────────────────────────────────────
+        echo "patient_id,label,stage,age,sex" > /tmp/labels.csv
+        echo "LUNG-001,1,IIIA,62,M" >> /tmp/labels.csv
+        echo "LUNG-002,0,IA,55,F" >> /tmp/labels.csv
+        echo "LUNG-003,1,IIB,71,M" >> /tmp/labels.csv
+        echo "LUNG-004,0,IA,48,F" >> /tmp/labels.csv
+        echo "LUNG-005,1,IIIB,67,M" >> /tmp/labels.csv
+        mc cp /tmp/labels.csv local/medvfs-metadata/lung_v3/metadata/labels.csv
+
+        # ── Seed: Splits CSV ────────────────────────────────────────────
+        echo "patient_id,split" > /tmp/splits.csv
+        echo "LUNG-001,train" >> /tmp/splits.csv
+        echo "LUNG-002,train" >> /tmp/splits.csv
+        echo "LUNG-003,train" >> /tmp/splits.csv
+        echo "LUNG-004,val" >> /tmp/splits.csv
+        echo "LUNG-005,test" >> /tmp/splits.csv
+        mc cp /tmp/splits.csv local/medvfs-metadata/lung_v3/splits.csv
+
+        # ── Seed: Patient Linking CSV ───────────────────────────────────
+        echo "patient_id,source_id,source_type" > /tmp/patient_map.csv
+        echo "LUNG-001,OMERO-42,omero" >> /tmp/patient_map.csv
+        echo "LUNG-001,SEQ-001,genomics" >> /tmp/patient_map.csv
+        echo "LUNG-002,OMERO-43,omero" >> /tmp/patient_map.csv
+        echo "LUNG-002,SEQ-002,genomics" >> /tmp/patient_map.csv
+        echo "LUNG-003,OMERO-44,omero" >> /tmp/patient_map.csv
+        echo "LUNG-003,SEQ-003,genomics" >> /tmp/patient_map.csv
+        echo "LUNG-004,OMERO-45,omero" >> /tmp/patient_map.csv
+        echo "LUNG-004,SEQ-004,genomics" >> /tmp/patient_map.csv
+        echo "LUNG-005,OMERO-46,omero" >> /tmp/patient_map.csv
+        echo "LUNG-005,SEQ-005,genomics" >> /tmp/patient_map.csv
+        mc cp /tmp/patient_map.csv local/medvfs-metadata/lung_v3/patient_map.csv
+
+        # ── Seed: Dummy model weights ───────────────────────────────────
+        dd if=/dev/urandom bs=1024 count=100 2>/dev/null | \
+          mc pipe local/medvfs-models/pretrained/resnet50/model.pt
+        echo "arch: resnet50" | \
+          mc pipe local/medvfs-models/pretrained/resnet50/config.yaml
+
+        echo ""
+        echo "═══════════════════════════════════════════════"
+        echo " MinIO seeded successfully!"
+        echo " Buckets: medvfs-genomics, medvfs-metadata,"
+        echo "          medvfs-models, medvfs-output"
+        echo " Patients: LUNG-001 .. LUNG-005"
+        echo " Console: http://localhost:9001"
+        echo "═══════════════════════════════════════════════"
+
+  # ── MedVFS (data virtualisation engine) ────────────────────────────────────
+  medvfs:
+    image: ghcr.io/colabbio/medvfs:latest
+    build:
+      context: ../../
+      dockerfile: Dockerfile
+    container_name: medvfs-engine
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    privileged: true   # Required for FUSE mount
+    ports:
+      - "8090:8090"
+    environment:
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_REGION: us-east-1
+    volumes:
+      - ./vfs-dev.yaml:/etc/medvfs/vfs.yaml:ro
+      - medvfs-output:/data/output
+    command: ["serve", "--config", "/etc/medvfs/vfs.yaml"]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8090/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── Training Container (dummy PyTorch workload) ────────────────────────────
+  trainer:
+    image: python:3.12-slim
+    container_name: medvfs-trainer
+    depends_on:
+      medvfs:
+        condition: service_healthy
+    volumes:
+      - medvfs-output:/data/output
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        set -e
+        echo "═══════════════════════════════════════════════"
+        echo " MedVFS Dummy Training Pipeline"
+        echo "═══════════════════════════════════════════════"
+
+        # Fetch the dataset manifest from MedVFS HTTP API
+        apt-get update -qq && apt-get install -y -qq curl jq > /dev/null 2>&1
+
+        echo ""
+        echo "📊 Dataset manifest:"
+        curl -sf http://medvfs:8090/dataset | jq .
+
+        echo ""
+        echo "📁 VFS file listing:"
+        curl -sf http://medvfs:8090/manifest | jq '.[] | .path' | head -20
+
+        echo ""
+        echo "🏋️ Simulating training..."
+        for epoch in 1 2 3 4 5; do
+          loss=$$(echo "scale=4; 2.5 - $$epoch * 0.4" | bc)
+          echo "  Epoch $$epoch/5 — loss: $$loss"
+          sleep 1
+        done
+
+        # Write results to output volume
+        echo '{"model": "dummy", "epochs": 5, "final_loss": 0.5}' > /data/output/training_result.json
+        echo "dummy_model_weights" > /data/output/checkpoint.pt
+
+        echo ""
+        echo "✅ Training complete!"
+        echo "   Results written to /data/output/"
+        ls -la /data/output/
+
+volumes:
+  minio-data:
+    driver: local
+  medvfs-output:
+    driver: local

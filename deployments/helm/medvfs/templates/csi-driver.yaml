@@ -1,0 +1,109 @@
+# ─── CSI Driver Skeleton ────────────────────────────────────────────────────────
+# This is a skeleton for a future CSI (Container Storage Interface) driver
+# that will allow MedVFS to be consumed as a native Kubernetes volume.
+#
+# With CSI, pods can declare:
+#   volumes:
+#     - name: clinical-data
+#       csi:
+#         driver: medvfs.colabbio.org
+#         volumeAttributes:
+#           config: /etc/medvfs/vfs.yaml
+#
+# Current status: SKELETON — not yet functional.
+# The DaemonSet and Sidecar modes are production-ready alternatives.
+#
+# Implementation roadmap:
+#   1. Implement CSI Identity/Node services (gRPC)
+#   2. Use FUSE mounts in NodePublishVolume
+#   3. Register as CSIDriver with attachRequired: false
+#   4. Add CSI node plugin DaemonSet
+---
+apiVersion: storage.k8s.io/v1
+kind: CSIDriver
+metadata:
+  name: medvfs.colabbio.org
+spec:
+  # MedVFS is a node-local FUSE mount, no controller attach needed
+  attachRequired: false
+  # Support ephemeral inline volumes for sidecar-like usage
+  volumeLifecycleModes:
+    - Ephemeral
+    - Persistent
+  # Pod info is needed to resolve per-pod config
+  podInfoOnMount: true
+  # FUSE mounts need mount propagation
+  fsGroupPolicy: File
+---
+# CSI Node Plugin DaemonSet (skeleton)
+# This would run the medvfs binary in CSI mode on every node.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "medvfs.fullname" . }}-csi-node
+  labels:
+    {{- include "medvfs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: csi-node
+spec:
+  selector:
+    matchLabels:
+      {{- include "medvfs.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: csi-node
+  template:
+    metadata:
+      labels:
+        {{- include "medvfs.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: csi-node
+    spec:
+      serviceAccountName: {{ include "medvfs.serviceAccountName" . }}
+      containers:
+        # ── CSI Node Driver Registrar ──
+        - name: node-driver-registrar
+          image: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.10.0
+          args:
+            - "--v=5"
+            - "--csi-address=/csi/csi.sock"
+            - "--kubelet-registration-path=/var/lib/kubelet/plugins/medvfs.colabbio.org/csi.sock"
+          volumeMounts:
+            - name: plugin-dir
+              mountPath: /csi
+            - name: registration-dir
+              mountPath: /registration
+        # ── MedVFS CSI Plugin ──
+        - name: medvfs-csi
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          args:
+            - csi
+            - "--csi-address=/csi/csi.sock"
+            - "--node-id=$(NODE_ID)"
+          env:
+            - name: NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: plugin-dir
+              mountPath: /csi
+            - name: pods-mount-dir
+              mountPath: /var/lib/kubelet/pods
+              mountPropagation: Bidirectional
+            - name: dev-fuse
+              mountPath: /dev/fuse
+      volumes:
+        - name: plugin-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins/medvfs.colabbio.org
+            type: DirectoryOrCreate
+        - name: registration-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins_registry
+            type: Directory
+        - name: pods-mount-dir
+          hostPath:
+            path: /var/lib/kubelet/pods
+            type: Directory
+        - name: dev-fuse
+          hostPath:
+            path: /dev/fuse

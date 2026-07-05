@@ -1,0 +1,97 @@
+# MedVFS — Pathology Lab Deployment
+# Enables OpenSlide + ClamAV sidecars for WSI analysis with virus scanning.
+#
+# Usage:
+#   helm install medvfs ./deployments/helm/medvfs \
+#     -f deployments/helm/medvfs/values-pathology.yaml \
+#     --set configInline="$(cat my-config.yaml)"
+
+mode: standalone
+
+image:
+  tag: "latest"
+
+vfs:
+  mountPoint: /data/vfs
+  cacheDir: /var/cache/medvfs
+  cacheMaxGB: 100
+  blockSizeMB: 4
+  prefetch:
+    enabled: true
+    strategy: format_aware
+    readAheadBlocks: 4
+    concurrency: 6
+
+cache:
+  type: pvc
+  pvc:
+    storageClass: standard
+    size: 200Gi
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: "4"
+    memory: 4Gi
+
+sidecars:
+  enabled: true
+
+  openslide:
+    enabled: true
+    image: quay.io/biocontainers/openslide-python:1.3.1--py312
+    mode: service
+    command: ["python3"]
+    args:
+      - -c
+      - |
+        from http.server import HTTPServer, BaseHTTPRequestHandler
+        import openslide, json, os
+
+        VFS = os.environ.get('VFS_PATH', '/data/vfs')
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                path = os.path.join(VFS, self.path.lstrip('/'))
+                try:
+                    slide = openslide.OpenSlide(path)
+                    info = {
+                        'dimensions': slide.dimensions,
+                        'level_count': slide.level_count,
+                        'properties': dict(slide.properties),
+                    }
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps(info).encode())
+                except Exception as e:
+                    self.send_response(500)
+                    self.end_headers()
+                    self.wfile.write(str(e).encode())
+
+        print('OpenSlide API server on :5000')
+        HTTPServer(('', 5000), Handler).serve_forever()
+    port: 5000
+    resources:
+      requests:
+        cpu: 1
+        memory: 2Gi
+      limits:
+        cpu: "4"
+        memory: 8Gi
+
+  clamav:
+    enabled: true
+    image: clamav/clamav:1.4
+    mode: batch
+    command: ["clamscan"]
+    args: ["-r", "--log=/tmp/scan.log", "/data/vfs"]
+    resources:
+      requests:
+        cpu: 250m
+        memory: 1Gi
+      limits:
+        cpu: "2"
+        memory: 4Gi
