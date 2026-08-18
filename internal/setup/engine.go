@@ -11,9 +11,11 @@ import (
 
 	"github.com/colabbio/medvfs/internal/adapters"
 	"github.com/colabbio/medvfs/internal/config"
+	"github.com/colabbio/medvfs/internal/dataset"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 )
+
 
 // Result holds metadata about a successfully materialised source.
 type Result struct {
@@ -113,6 +115,14 @@ func (e *Engine) Run(ctx context.Context) ([]Result, error) {
 		return results, err
 	}
 
+	// Execute derived views (cross-source joins) if configured
+	if e.cfg.Dataset != nil && len(e.cfg.Dataset.DerivedViews) > 0 {
+		e.log.Info("executing derived views", zap.Int("count", len(e.cfg.Dataset.DerivedViews)))
+		if err := dataset.ExecuteDerivedViews(e.cfg.Dataset.DerivedViews, e.cfg.Sources, e.outDir, e.log); err != nil {
+			return results, fmt.Errorf("execute derived views: %w", err)
+		}
+	}
+
 	// Write manifest.json
 	if merr := writeManifest(e.outDir, results); merr != nil {
 		e.log.Warn("could not write manifest", zap.Error(merr))
@@ -120,6 +130,7 @@ func (e *Engine) Run(ctx context.Context) ([]Result, error) {
 
 	return results, nil
 }
+
 
 func writeManifest(outDir string, results []Result) error {
 	data, err := json.MarshalIndent(results, "", "  ")
