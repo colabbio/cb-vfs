@@ -12,7 +12,9 @@ import (
 	"github.com/colabbio/medvfs/internal/adapters"
 	"github.com/colabbio/medvfs/internal/config"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
 
 // OMOPAdapter fetches data from an OMOP CDM PostgreSQL database and writes CSV files.
 type OMOPAdapter struct {
@@ -134,7 +136,19 @@ func valueToString(v any) string {
 		return strconv.FormatBool(t)
 	case time.Time:
 		return t.Format(time.RFC3339)
+	case pgtype.Numeric:
+		if !t.Valid {
+			return ""
+		}
+		f, err := t.Float64Value()
+		if err != nil {
+			return fmt.Sprintf("%v", t)
+		}
+		return strconv.FormatFloat(f.Float64, 'f', -1, 64)
+	case fmt.Stringer:
+		return t.String()
 	default:
 		return fmt.Sprintf("%v", t)
 	}
 }
+
