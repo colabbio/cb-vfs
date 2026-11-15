@@ -49,7 +49,21 @@ type SourceConfig struct {
 	Genomics    *GenomicsConfig    `yaml:"genomics,omitempty"`
 	DICOM       *DICOMConfig       `yaml:"dicom,omitempty"`
 	Files       *FilesConfig       `yaml:"files,omitempty"`
+	SQL         *SQLConfig         `yaml:"sql,omitempty"`
+	BigQuery    *BigQueryConfig    `yaml:"bigquery,omitempty"`
 	Materialize MaterializeConfig  `yaml:"materialize"`
+}
+
+// SQLConfig defines configuration for generic SQL databases (PostgreSQL, Cloud SQL).
+type SQLConfig struct {
+	Driver string `yaml:"driver,omitempty"` // default: "postgres"
+}
+
+// BigQueryConfig defines project and query execution settings for Google Cloud BigQuery.
+type BigQueryConfig struct {
+	ProjectID       string `yaml:"project_id,omitempty"`       // GCP Project ID (billing & execution)
+	Location        string `yaml:"location,omitempty"`         // BigQuery dataset location (e.g., "US", "EU")
+	CredentialsFile string `yaml:"credentials_file,omitempty"` // Optional path to service account JSON (falls back to ADC)
 }
 
 // OMEROQueryConfig defines what to extract from an OMERO server.

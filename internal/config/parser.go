@@ -44,6 +44,7 @@ func validate(cfg *VFSConfig) error {
 
 	validTypes := map[string]bool{
 		"omop": true, "fhir": true, "genomics": true, "dicom": true, "files": true, "omero": true, "orthanc": true,
+		"sql": true, "bigquery": true,
 	}
 	validStorage := map[string]bool{
 		"emptydir": true, "hostpath": true, "pvc": true,
@@ -63,7 +64,13 @@ func validate(cfg *VFSConfig) error {
 		}
 		ids[s.ID] = true
 		if !validTypes[s.Type] {
-			return fmt.Errorf("source %q: type must be one of: omop, fhir, genomics, dicom (got %q)", s.ID, s.Type)
+			return fmt.Errorf("source %q: invalid type %q", s.ID, s.Type)
+		}
+		if (s.Type == "sql" || s.Type == "omop") && s.Query == "" {
+			return fmt.Errorf("source %q: query is required for type %s", s.ID, s.Type)
+		}
+		if s.Type == "bigquery" && s.Query == "" {
+			return fmt.Errorf("source %q: query is required for type bigquery", s.ID)
 		}
 		if s.Materialize.Output == "" {
 			return fmt.Errorf("source %q: materialize.output is required", s.ID)

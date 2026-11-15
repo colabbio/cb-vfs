@@ -23,6 +23,7 @@ import (
 type DispatchFetcher struct {
 	local   *LocalFetcher
 	http    *HTTPFetcher
+	proxy   *ProxyFetcher
 	gcs     *GCSFetcher
 	gcsOnce sync.Once
 	s3      *S3Fetcher
@@ -47,6 +48,7 @@ func NewDispatchFetcher(httpFetcher *HTTPFetcher, log *zap.Logger) *DispatchFetc
 	return &DispatchFetcher{
 		local: NewLocalFetcher(),
 		http:  httpFetcher,
+		proxy: NewProxyFetcher(nil),
 		log:   log,
 	}
 }
@@ -101,6 +103,9 @@ func (d *DispatchFetcher) resolve(ref string) (RemoteFetcher, string, error) {
 
 	case strings.HasPrefix(ref, "http://"), strings.HasPrefix(ref, "https://"):
 		return d.http, "http", nil
+
+	case strings.HasPrefix(ref, "cb-proxy://"), strings.HasPrefix(ref, "cb-proxy+https://"):
+		return d.proxy, "cb-proxy", nil
 
 	case strings.HasPrefix(ref, "omero://"), strings.HasPrefix(ref, "wado-rs://"):
 		// These need URL resolution before HTTP fetch.
