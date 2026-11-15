@@ -6,26 +6,30 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/colabbio/medvfs/internal/vfs"
 	"go.uber.org/zap"
 )
 
 // Server provides the HTTP API for MedVFS serve mode.
 // Endpoints:
 //
-//	GET /health          → 200 OK
-//	GET /manifest        → JSON list of all file mappings
-//	GET /stats           → JSON cache statistics
-//	GET /events          → SSE stream of live events
-//	GET /files/{path...} → HTTP file proxy (fallback when FUSE unavailable)
+//	GET  /health                  → 200 OK
+//	GET  /manifest                → JSON list of all file mappings
+//	GET  /stats                   → JSON cache statistics
+//	GET  /events                  → SSE stream of live events
+//	POST /internal/v1/acl/sync    → Push CohortGrantRule from cb-svc-ai
+//	POST /internal/v1/acl/revoke  → Execute hot Kill-Switch on grantId
+//	GET  /internal/v1/acl/status  → Snapshot of active/revoked cohort ACLs
 type Server struct {
 	port   int
 	engine *Engine
+	acl    *vfs.CohortAclRegistry
 	log    *zap.Logger
 }
 
 // NewServer creates a new HTTP server for the serve engine.
 func NewServer(port int, engine *Engine, log *zap.Logger) *Server {
-	return &Server{port: port, engine: engine, log: log}
+	return &Server{port: port, engine: engine, acl: vfs.NewCohortAclRegistry(), log: log}
 }
 
 // Start begins serving HTTP requests. It blocks until ctx is cancelled.
@@ -36,6 +40,9 @@ func (s *Server) Start(ctx context.Context) {
 	mux.HandleFunc("/dataset", s.handleDataset)
 	mux.HandleFunc("/stats", s.handleStats)
 	mux.HandleFunc("/events", s.handleEvents)
+	mux.HandleFunc("/internal/v1/acl/sync", s.handleAclSync)
+	mux.HandleFunc("/internal/v1/acl/revoke", s.handleAclRevoke)
+	mux.HandleFunc("/internal/v1/acl/status", s.handleAclStatus)
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", s.port),
@@ -126,4 +133,44 @@ func (s *Server) handleDataset(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(manifest)
+}
+
+func (s *Server) handleAclSync(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var rule vfs.CohortGrantRule
+	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.acl.SyncGrant(rule)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "synced", "grantId": rule.GrantID})
+}
+
+func (s *Server) handleAclRevoke(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		GrantID string `json:"grantId"`
+		Reason  string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.acl.RevokeGrant(req.GrantID, req.Reason)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "revoked", "grantId": req.GrantID})
+}
+
+func (s *Server) handleAclStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"grants": s.acl.Snapshot(),
+	})
 }

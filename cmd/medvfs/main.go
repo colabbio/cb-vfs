@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/colabbio/medvfs/internal/adapters"
+	"github.com/colabbio/medvfs/internal/adapters/bigquery"
 	"github.com/colabbio/medvfs/internal/adapters/dicom"
 	"github.com/colabbio/medvfs/internal/adapters/fhir"
 	filesadapter "github.com/colabbio/medvfs/internal/adapters/files"
@@ -13,6 +14,7 @@ import (
 	"github.com/colabbio/medvfs/internal/adapters/omero"
 	"github.com/colabbio/medvfs/internal/adapters/omop"
 	"github.com/colabbio/medvfs/internal/adapters/orthanc"
+	"github.com/colabbio/medvfs/internal/adapters/sql"
 	"github.com/colabbio/medvfs/internal/config"
 	"github.com/colabbio/medvfs/internal/secrets"
 	"github.com/colabbio/medvfs/internal/serve"
@@ -186,6 +188,14 @@ func buildAdapterFactory(ctx context.Context) setup.AdapterFactory {
 				return nil, fmt.Errorf("source %q: dicom: block is required", src.ID)
 			}
 			return dicom.New(src, log), nil
+		case "sql":
+			dsn, err := resolveDSN(ctx, src)
+			if err != nil {
+				return nil, err
+			}
+			return sql.New(src, dsn, log), nil
+		case "bigquery":
+			return bigquery.New(src, log), nil
 		case "files":
 			if src.Files == nil {
 				return nil, fmt.Errorf("source %q: files: block is required", src.ID)

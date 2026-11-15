@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.4.1] - 2026-11-15
+
+### Added / Changed
+- Consolidate platform WIP, hygiene updates (`.gitignore`), and multi-repo GitHub workflow alignment.
+
 ## [0.3.0] - 2026-08-19
 
 ### Added
