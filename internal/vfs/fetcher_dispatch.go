@@ -6,29 +6,59 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
+	"github.com/colabbio/medvfs/internal/config"
+	"github.com/colabbio/medvfs/internal/secrets"
 	"go.uber.org/zap"
 )
 
+type contextKeySourceID struct{}
+
+// WithSourceID attaches a sourceID to ctx so DispatchFetcher can route block reads
+// through the source's authenticated RemoteFetcher (CB-SPEC-CRED-022 §5.3).
+func WithSourceID(ctx context.Context, sourceID string) context.Context {
+	if sourceID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, contextKeySourceID{}, sourceID)
+}
+
+// SourceIDFromContext extracts the sourceID from ctx, if present.
+func SourceIDFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	if v, ok := ctx.Value(contextKeySourceID{}).(string); ok {
+		return v
+	}
+	return ""
+}
+
 // DispatchFetcher routes block fetch requests to the appropriate backend
-// based on the URI scheme of the remote reference:
+// based on the sourceID (if registered with source-specific credentials) or
+// the URI scheme of the remote reference:
 //
-//   - file://   → LocalFetcher  (DICOM local, co-located NFS)
-//   - http(s):// → HTTPFetcher  (OMERO, Orthanc DICOMweb, generic HTTP)
-//   - gs://     → GCSFetcher   (Google Cloud Storage — future)
-//   - s3://     → S3Fetcher    (AWS S3 — future)
+//   - file://          → LocalFetcher  (DICOM local, co-located NFS)
+//   - http(s)://       → HTTPFetcher   (OMERO, Orthanc DICOMweb, generic HTTP)
+//   - cb-proxy(s)://   → ProxyFetcher  (Hierarchical Level 1 <-> Level 2 node stream)
+//   - gs://            → GCSFetcher    (Google Cloud Storage)
+//   - s3://            → S3Fetcher     (AWS S3 / MinIO)
 //
 // This enables the BlockManager and FUSE layer to be agnostic to the
 // storage backend — all reads go through the same caching pipeline.
 type DispatchFetcher struct {
-	local   *LocalFetcher
-	http    *HTTPFetcher
-	proxy   *ProxyFetcher
-	gcs     *GCSFetcher
-	gcsOnce sync.Once
-	s3      *S3Fetcher
-	s3Once  sync.Once
-	log     *zap.Logger
+	local         *LocalFetcher
+	http          *HTTPFetcher
+	proxy         *ProxyFetcher
+	gcs           *GCSFetcher
+	gcsOnce       sync.Once
+	s3            *S3Fetcher
+	s3Once        sync.Once
+	sourceClients map[string]RemoteFetcher
+	refToSource   map[string]string
+	mu            sync.RWMutex
+	log           *zap.Logger
 
 	// Aggregate counters
 	totalBytes atomic.Int64
@@ -46,16 +76,55 @@ func NewDispatchFetcher(httpFetcher *HTTPFetcher, log *zap.Logger) *DispatchFetc
 	}
 
 	return &DispatchFetcher{
-		local: NewLocalFetcher(),
-		http:  httpFetcher,
-		proxy: NewProxyFetcher(nil),
-		log:   log,
+		local:         NewLocalFetcher(),
+		http:          httpFetcher,
+		proxy:         NewProxyFetcher(nil),
+		sourceClients: make(map[string]RemoteFetcher),
+		refToSource:   make(map[string]string),
+		log:           log,
 	}
 }
 
-// FetchBlock dispatches the fetch to the correct backend based on URI scheme.
+// RegisterSourceFetcher binds a specific RemoteFetcher (pre-configured with a source's
+// SecretBundle / mTLS / OAuth2 / OMERO session / S3 / GCS credentials) to sourceID.
+func (d *DispatchFetcher) RegisterSourceFetcher(sourceID string, fetcher RemoteFetcher) {
+	if sourceID == "" || fetcher == nil {
+		return
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.sourceClients[sourceID] = fetcher
+}
+
+// RegisterSourceAuth constructs and registers an authenticated HTTP/Proxy fetcher
+// for sourceID from its SourceConfig (CB-SPEC-CRED-022 §5.3).
+func (d *DispatchFetcher) RegisterSourceAuth(src config.SourceConfig) error {
+	if src.Auth == nil || src.Auth.Type == "" || src.Auth.Type == "none" {
+		return nil
+	}
+	client, err := secrets.BuildAuthenticatedHTTPClient(src.Endpoint, src.Auth, 120*time.Second)
+	if err != nil {
+		return fmt.Errorf("source %q auth client: %w", src.ID, err)
+	}
+	d.RegisterSourceFetcher(src.ID, NewHTTPFetcher(client))
+	return nil
+}
+
+// BindRefToSource associates a remoteRef URI with a sourceID so that even callers
+// that do not pass WithSourceID(ctx, sourceID) automatically use the source's
+// authenticated fetcher.
+func (d *DispatchFetcher) BindRefToSource(remoteRef, sourceID string) {
+	if remoteRef == "" || sourceID == "" {
+		return
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.refToSource[remoteRef] = sourceID
+}
+
+// FetchBlock dispatches the fetch to the correct backend based on sourceID or URI scheme.
 func (d *DispatchFetcher) FetchBlock(ctx context.Context, ref string, offset int64, length int64) ([]byte, error) {
-	fetcher, scheme, err := d.resolve(ref)
+	fetcher, scheme, err := d.resolveWithContext(ctx, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +147,7 @@ func (d *DispatchFetcher) FetchBlock(ctx context.Context, ref string, offset int
 
 // FileSize dispatches the size query to the correct backend.
 func (d *DispatchFetcher) FileSize(ctx context.Context, ref string) (int64, error) {
-	fetcher, _, err := d.resolve(ref)
+	fetcher, _, err := d.resolveWithContext(ctx, ref)
 	if err != nil {
 		return 0, err
 	}
@@ -93,6 +162,26 @@ func (d *DispatchFetcher) TotalBytesFetched() int64 {
 // TotalFetchOps returns aggregate fetch operations across all backends.
 func (d *DispatchFetcher) TotalFetchOps() int64 {
 	return d.totalOps.Load()
+}
+
+// resolveWithContext checks if a source-specific authenticated fetcher is registered
+// for the file's sourceID or remoteRef before falling back to scheme-based resolution.
+func (d *DispatchFetcher) resolveWithContext(ctx context.Context, ref string) (RemoteFetcher, string, error) {
+	if !strings.HasPrefix(ref, "file://") {
+		srcID := SourceIDFromContext(ctx)
+		d.mu.RLock()
+		if srcID == "" {
+			srcID = d.refToSource[ref]
+		}
+		if srcID != "" {
+			if sf, ok := d.sourceClients[srcID]; ok {
+				d.mu.RUnlock()
+				return sf, "source:" + srcID, nil
+			}
+		}
+		d.mu.RUnlock()
+	}
+	return d.resolve(ref)
 }
 
 // resolve picks the right fetcher for a given ref URI.

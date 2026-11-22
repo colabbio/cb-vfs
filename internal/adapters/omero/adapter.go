@@ -26,6 +26,7 @@ import (
 
 	"github.com/colabbio/medvfs/internal/adapters"
 	"github.com/colabbio/medvfs/internal/config"
+	"github.com/colabbio/medvfs/internal/secrets"
 	"go.uber.org/zap"
 	"golang.org/x/net/publicsuffix"
 )
@@ -72,8 +73,8 @@ func (a *Adapter) Validate(ctx context.Context) error {
 	if a.cfg.OMERO.DatasetID == 0 && a.cfg.OMERO.ProjectID == 0 {
 		return fmt.Errorf("omero adapter %q: omero.dataset_id or omero.project_id is required", a.cfg.ID)
 	}
-	if a.cfg.Auth == nil || (a.cfg.Auth.Type != "basic" && a.cfg.Auth.Type != "none") {
-		return fmt.Errorf("omero adapter %q: auth.type must be 'basic' or 'none'", a.cfg.ID)
+	if a.cfg.Auth == nil || (a.cfg.Auth.Type != "basic" && a.cfg.Auth.Type != "omero_session" && a.cfg.Auth.Type != "bearer" && a.cfg.Auth.Type != "mtls" && a.cfg.Auth.Type != "none") {
+		return fmt.Errorf("omero adapter %q: auth.type must be 'basic', 'omero_session', 'bearer', 'mtls', or 'none'", a.cfg.ID)
 	}
 
 	// Ping OMERO.web API
@@ -99,7 +100,7 @@ func (a *Adapter) Fetch(ctx context.Context, outputDir string, progress chan<- a
 	}
 
 	// 2. Login (session cookie stored in jar)
-	if a.cfg.Auth != nil && a.cfg.Auth.Type == "basic" {
+	if a.cfg.Auth != nil && (a.cfg.Auth.Type == "basic" || a.cfg.Auth.Type == "omero_session") {
 		if err := a.login(ctx); err != nil {
 			return fmt.Errorf("omero adapter %q: login: %w", a.cfg.ID, err)
 		}
@@ -204,12 +205,30 @@ func (a *Adapter) fetchCSRFToken(ctx context.Context) error {
 }
 
 func (a *Adapter) login(ctx context.Context) error {
-	// Resolve credentials from AuthConfig
+	// Resolve credentials from AuthConfig via unified SecretBundle engine (CB-SPEC-CRED-022)
 	username, password := "root", "omero" // fallback dev defaults
-	if a.cfg.Auth.SecretRef != "" {
-		// TODO: resolve via secret engine (k8s:// / env:// / file://)
-		a.log.Warn("OMERO secret_ref resolution not yet implemented; using defaults",
-			zap.String("secret_ref", a.cfg.Auth.SecretRef))
+	if a.cfg.Auth != nil {
+		bundle, err := secrets.ResolveAuthBundle(ctx, a.cfg.Auth)
+		if err != nil {
+			return fmt.Errorf("resolve OMERO secret_ref %q: %w", a.cfg.Auth.SecretRef, err)
+		}
+		// Check if an explicit OMERO session UUID was provided (passwordless session)
+		if sessUUID := bundle.FirstString("omero_session_uuid", "sessionid", "omero_session"); sessUUID != "" {
+			if u, parseErr := url.Parse(a.cfg.Endpoint); parseErr == nil && a.client.Jar != nil {
+				a.client.Jar.SetCookies(u, []*http.Cookie{{Name: "sessionid", Value: sessUUID, Path: "/"}})
+				return nil
+			}
+		}
+		if u := bundle.FirstString("username", "user", "omero_user", "rw_username", "ro_username"); u != "" {
+			username = u
+		}
+		if p := bundle.FirstString("password", "pass", "omero_password", "rw_password", "ro_password", "value"); p != "" {
+			if parts := strings.SplitN(p, ":", 2); len(parts) == 2 && bundle.FirstString("username", "user") == "" {
+				username, password = parts[0], parts[1]
+			} else {
+				password = p
+			}
+		}
 	}
 
 	loginURL := a.cfg.Endpoint + apiV0 + "/login/"
@@ -515,7 +534,7 @@ func (a *Adapter) BuildFileTree(ctx context.Context, outDir string, strategy str
 	if err := a.fetchCSRFToken(ctx); err != nil {
 		return nil, fmt.Errorf("omero adapter %q: csrf: %w", a.cfg.ID, err)
 	}
-	if a.cfg.Auth != nil && a.cfg.Auth.Type == "basic" {
+	if a.cfg.Auth != nil && (a.cfg.Auth.Type == "basic" || a.cfg.Auth.Type == "omero_session") {
 		if err := a.login(ctx); err != nil {
 			return nil, fmt.Errorf("omero adapter %q: login: %w", a.cfg.ID, err)
 		}
@@ -553,6 +572,7 @@ func (a *Adapter) BuildFileTree(ctx context.Context, outDir string, strategy str
 			a.cfg.Endpoint, apiV0, img.ID)
 
 		fm := adapters.FileMapping{
+			SourceID:    a.cfg.ID,
 			LogicalPath: logicalPath,
 			RemoteRef:   origFileURL,
 			ContentType: guessContentType(ext),

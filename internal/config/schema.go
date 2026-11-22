@@ -104,15 +104,50 @@ type OMEROImageFilter struct {
 	Tag string `yaml:"tag,omitempty"`
 }
 
-// AuthConfig supports several auth strategies for HTTP-based sources.
+// AuthConfig supports canonical credential strategies defined in CB-SPEC-CRED-022:
+// none | basic | bearer | api_key | oauth2_client_credentials | smart_on_fhir |
+// smart_backend_jwt | mtls | mtls_oauth2 | omero_session | aws_sigv4 | gcp_service_account
 type AuthConfig struct {
-	Type         string `yaml:"type"`                    // none | bearer | smart_on_fhir | basic
-	SecretRef    string `yaml:"secret_ref,omitempty"`    // k8s:// | env:// | file://
-	Token        string `yaml:"token,omitempty"`         // dev only — literal bearer token
-	ClientID     string `yaml:"client_id,omitempty"`     // SMART-on-FHIR client credentials
-	ClientSecret string `yaml:"client_secret,omitempty"` // dev only — literal secret
-	TokenURL     string `yaml:"token_url,omitempty"`     // SMART-on-FHIR token endpoint
-	Scope        string `yaml:"scope,omitempty"`         // SMART-on-FHIR scopes
+	Type                 string            `yaml:"type"`                              // Auth strategy identifier
+	SecretRef            string            `yaml:"secret_ref,omitempty"`              // k8s:// | vault:// | env:// | file://
+	Token                string            `yaml:"token,omitempty"`                   // dev only — literal bearer/basic token
+	Username             string            `yaml:"username,omitempty"`                // optional override username
+	Password             string            `yaml:"password,omitempty"`                // dev only — literal password
+	ClientID             string            `yaml:"client_id,omitempty"`               // legacy SMART-on-FHIR / OAuth2 client ID
+	ClientSecret         string            `yaml:"client_secret,omitempty"`           // dev only — literal client secret
+	TokenURL             string            `yaml:"token_url,omitempty"`               // legacy SMART-on-FHIR token endpoint
+	Scope                string            `yaml:"scope,omitempty"`                   // legacy space-separated scopes
+	OAuth2               *OAuth2AuthConfig `yaml:"oauth2,omitempty"`                  // structured OAuth2 & SMART Backend Services config
+	MTLS                 *MTLSAuthConfig   `yaml:"mtls,omitempty"`                    // mutual TLS client certificate & CA config
+	APIKey               *APIKeyAuthConfig `yaml:"api_key,omitempty"`                 // custom API gateway header config
+	PropagateCohortGrant bool              `yaml:"propagate_cohort_grant,omitempty"`  // forward X-ColabBio-Grant-Id upstream
+	GrantID              string            `yaml:"grant_id,omitempty"`                // explicit DPO cohort grant ID
+}
+
+// OAuth2AuthConfig configures OAuth2 client_credentials and SMART Backend Services (RFC 7523 private_key_jwt).
+type OAuth2AuthConfig struct {
+	TokenURL           string   `yaml:"token_url"`
+	ClientID           string   `yaml:"client_id,omitempty"`
+	Scopes             []string `yaml:"scopes,omitempty"`
+	AssertionAlgorithm string   `yaml:"assertion_algorithm,omitempty"`  // RS384 (default) | RS256 | ES384
+	Audience           string   `yaml:"audience,omitempty"`             // JWT aud claim (defaults to TokenURL)
+	KeyID              string   `yaml:"key_id,omitempty"`               // JWT kid header
+	RefreshSkewSeconds int      `yaml:"refresh_skew_seconds,omitempty"` // default: 60
+}
+
+// MTLSAuthConfig configures mutual TLS certificates resolved from a SecretBundle.
+type MTLSAuthConfig struct {
+	ClientCertKey      string `yaml:"client_cert_key,omitempty"`      // default: "tls.crt"
+	ClientKeyKey       string `yaml:"client_key_key,omitempty"`       // default: "tls.key"
+	CACertKey          string `yaml:"ca_cert_key,omitempty"`          // default: "ca.crt"
+	ServerNameOverride string `yaml:"server_name_override,omitempty"` // optional SNI override
+	InsecureSkipVerify bool   `yaml:"insecure_skip_verify,omitempty"` // dev/test only
+}
+
+// APIKeyAuthConfig configures custom API Key headers for hospital API gateways.
+type APIKeyAuthConfig struct {
+	HeaderName string `yaml:"header_name,omitempty"` // default: "X-API-Key"
+	Prefix     string `yaml:"prefix,omitempty"`      // e.g. "ApiKey "
 }
 
 // FHIRQueryConfig defines a FHIR search query and how to flatten the result into CSV.
