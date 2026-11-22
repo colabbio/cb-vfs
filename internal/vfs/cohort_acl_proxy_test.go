@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/colabbio/medvfs/internal/config"
 	"go.uber.org/zap"
 )
 
@@ -72,5 +73,52 @@ func TestDispatchFetcherHierarchicalCbProxyScheme(t *testing.T) {
 	badRef := "cb-proxy://" + host + "/GRANT-BAD-999/prostate/TCGA-EJ-7781.svs"
 	if _, err := df.FetchBlock(context.Background(), badRef, 0, 4); err == nil {
 		t.Fatal("expected 403 error for unauthorized grant")
+	}
+}
+
+func TestDispatchFetcherPerSourceAuthenticatedRouting(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Hospital-API-Key") != "lafe-vna-secret-key-2026" {
+			http.Error(w, "missing hospital API key", http.StatusUnauthorized)
+			return
+		}
+		if r.Header.Get("X-ColabBio-Grant-Id") != "GRANT-LAFE-001" {
+			http.Error(w, "missing cohort grant id", http.StatusForbidden)
+			return
+		}
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write([]byte("DICOM_PIXEL_BLOCK"))
+	}))
+	defer srv.Close()
+
+	df := NewDispatchFetcher(nil, zap.NewNop())
+	t.Setenv("LAFE_VNA_KEY", "lafe-vna-secret-key-2026")
+
+	err := df.RegisterSourceAuth(config.SourceConfig{
+		ID:       "hospital-lafe-vna",
+		Endpoint: srv.URL,
+		Auth: &config.AuthConfig{
+			Type:                 "api_key",
+			SecretRef:            "env://LAFE_VNA_KEY",
+			PropagateCohortGrant: true,
+			GrantID:              "GRANT-LAFE-001",
+			APIKey: &config.APIKeyAuthConfig{
+				HeaderName: "X-Hospital-API-Key",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("RegisterSourceAuth: %v", err)
+	}
+
+	targetURL := srv.URL + "/dicom-web/studies/1.2.3/instances/4.5.6"
+	df.BindRefToSource(targetURL, "hospital-lafe-vna")
+
+	data, err := df.FetchBlock(context.Background(), targetURL, 0, 17)
+	if err != nil {
+		t.Fatalf("FetchBlock with per-source auth failed: %v", err)
+	}
+	if string(data) != "DICOM_PIXEL_BLOCK" {
+		t.Fatalf("got %q, want DICOM_PIXEL_BLOCK", string(data))
 	}
 }

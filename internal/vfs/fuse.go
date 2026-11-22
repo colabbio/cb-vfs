@@ -142,8 +142,12 @@ func (v *FUSEVFS) AddSource(sourceID string, mappings []adapters.FileMapping) er
 	v.mu.Unlock()
 
 	for _, m := range mappings {
-		// Register file in block manager
-		v.bm.RegisterFile(m.LogicalPath, m.RemoteRef, m.SizeBytes)
+		srcID := m.SourceID
+		if srcID == "" {
+			srcID = sourceID
+		}
+		// Register file in block manager with its sourceID
+		v.bm.RegisterFileWithSource(srcID, m.LogicalPath, m.RemoteRef, m.SizeBytes)
 
 		// Register format for prefetch
 		ext := fileExtension(m.LogicalPath)
@@ -157,6 +161,15 @@ func (v *FUSEVFS) AddSource(sourceID string, mappings []adapters.FileMapping) er
 		zap.String("source", sourceID),
 		zap.Int("files", len(mappings)),
 	)
+	return nil
+}
+
+// RegisterSourceAuth registers a source's authentication configuration with the
+// underlying DispatchFetcher so FUSE block reads use the source's credentials.
+func (v *FUSEVFS) RegisterSourceAuth(src config.SourceConfig) error {
+	if df, ok := v.bm.fetcher.(*DispatchFetcher); ok {
+		return df.RegisterSourceAuth(src)
+	}
 	return nil
 }
 
