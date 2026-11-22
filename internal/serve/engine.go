@@ -71,7 +71,13 @@ func (e *Engine) Run(ctx context.Context) error {
 
 	// 3. Build adapters and collect file mappings
 	outDir := e.cfg.Storage.OutputDir
+	fuseVFS, isFUSE := e.vfsImpl.(*vfs.FUSEVFS)
 	for _, src := range e.cfg.Sources {
+		if isFUSE {
+			if authErr := fuseVFS.RegisterSourceAuth(src); authErr != nil {
+				return fmt.Errorf("register source auth for %q: %w", src.ID, authErr)
+			}
+		}
 		adapter, err := e.factory(src)
 		if err != nil {
 			return fmt.Errorf("create adapter %q: %w", src.ID, err)

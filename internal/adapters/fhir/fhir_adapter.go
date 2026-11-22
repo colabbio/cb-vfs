@@ -16,6 +16,7 @@ import (
 
 	"github.com/colabbio/medvfs/internal/adapters"
 	"github.com/colabbio/medvfs/internal/config"
+	"github.com/colabbio/medvfs/internal/secrets"
 )
 
 const defaultPageSize = 100
@@ -230,7 +231,8 @@ func (a *FHIRAdapter) setHeaders(req *http.Request) {
 	}
 }
 
-// resolveAuth populates a.token based on the auth config.
+// resolveAuth initializes the authenticated HTTP client and populates a.token
+// using the unified SecretBundle & AuthenticatedRoundTripper engine (CB-SPEC-CRED-022).
 func (a *FHIRAdapter) resolveAuth(ctx context.Context) error {
 	if a.cfg.Auth == nil || a.cfg.Auth.Type == "" || a.cfg.Auth.Type == "none" {
 		return nil
@@ -241,7 +243,14 @@ func (a *FHIRAdapter) resolveAuth(ctx context.Context) error {
 			a.token = a.cfg.Auth.Token
 			return nil
 		}
-		// TODO: resolve via secrets.Resolve
+		if a.cfg.Auth.SecretRef != "" {
+			tok, err := secrets.Resolve(ctx, a.cfg.Auth.SecretRef)
+			if err != nil {
+				return fmt.Errorf("bearer resolve secret_ref: %w", err)
+			}
+			a.token = tok
+			return nil
+		}
 		return fmt.Errorf("bearer: token or secret_ref required")
 
 	case "smart_on_fhir":
@@ -252,6 +261,14 @@ func (a *FHIRAdapter) resolveAuth(ctx context.Context) error {
 		a.token = tok
 		return nil
 
+	case "basic", "api_key", "oauth2_client_credentials", "smart_backend_jwt", "mtls", "mtls_oauth2":
+		client, err := secrets.BuildAuthenticatedHTTPClient(a.cfg.Endpoint, a.cfg.Auth, 60*time.Second)
+		if err != nil {
+			return err
+		}
+		a.client = client
+		return nil
+
 	default:
 		return fmt.Errorf("unsupported auth type %q", a.cfg.Auth.Type)
 	}
@@ -260,15 +277,32 @@ func (a *FHIRAdapter) resolveAuth(ctx context.Context) error {
 // fetchSMARTToken performs an OAuth2 client_credentials grant for SMART-on-FHIR.
 func (a *FHIRAdapter) fetchSMARTToken(ctx context.Context) (string, error) {
 	auth := a.cfg.Auth
-	if auth.TokenURL == "" {
+	bundle, err := secrets.ResolveAuthBundle(ctx, auth)
+	if err != nil {
+		return "", err
+	}
+
+	tokenURL := auth.TokenURL
+	if tokenURL == "" && auth.OAuth2 != nil {
+		tokenURL = auth.OAuth2.TokenURL
+	}
+	if tokenURL == "" {
+		tokenURL = bundle.FirstString("token_url")
+	}
+	if tokenURL == "" {
 		return "", fmt.Errorf("token_url is required for smart_on_fhir auth")
 	}
 
-	clientID := auth.ClientID
-	clientSecret := auth.ClientSecret
-	// TODO: resolve from secret_ref if set
+	clientID := bundle.FirstString("client_id")
+	clientSecret := bundle.FirstString("client_secret", "secret", "value")
+	if clientID == "" || clientSecret == "" {
+		return "", fmt.Errorf("client_id and client_secret are required for smart_on_fhir auth")
+	}
 
 	scope := auth.Scope
+	if scope == "" {
+		scope = bundle.FirstString("scope")
+	}
 	if scope == "" {
 		scope = "system/*.read"
 	}
@@ -280,7 +314,7 @@ func (a *FHIRAdapter) fetchSMARTToken(ctx context.Context) (string, error) {
 		"scope":         {scope},
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, auth.TokenURL,
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL,
 		strings.NewReader(form.Encode()))
 	if err != nil {
 		return "", err

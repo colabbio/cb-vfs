@@ -80,6 +80,7 @@ type BlockManager struct {
 
 // fileInfo holds metadata for a single virtual file.
 type fileInfo struct {
+	sourceID  string
 	remoteRef string
 	size      int64
 	blocks    map[int]*blockEntry
@@ -131,14 +132,24 @@ func (bm *BlockManager) SetPrefetcher(p *Prefetcher) {
 
 // RegisterFile registers a new virtual file for block-based access.
 func (bm *BlockManager) RegisterFile(fileID string, remoteRef string, size int64) {
+	bm.RegisterFileWithSource("", fileID, remoteRef, size)
+}
+
+// RegisterFileWithSource registers a virtual file bound to a specific sourceID
+// so its authenticated fetcher is used for byte-range block downloads.
+func (bm *BlockManager) RegisterFileWithSource(sourceID string, fileID string, remoteRef string, size int64) {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 	bm.files[fileID] = &fileInfo{
+		sourceID:  sourceID,
 		remoteRef: remoteRef,
 		size:      size,
 		blocks:    make(map[int]*blockEntry),
 	}
 	bm.stats.FilesTracked++
+	if df, ok := bm.fetcher.(*DispatchFetcher); ok && sourceID != "" {
+		df.BindRefToSource(remoteRef, sourceID)
+	}
 }
 
 // FileSize returns the known size of a registered file.
@@ -286,7 +297,8 @@ func (bm *BlockManager) fetchAndCache(ctx context.Context, fi *fileInfo, entry *
 		length = fi.size - offset
 	}
 
-	data, err := bm.fetcher.FetchBlock(ctx, fi.remoteRef, offset, length)
+	fetchCtx := WithSourceID(ctx, fi.sourceID)
+	data, err := bm.fetcher.FetchBlock(fetchCtx, fi.remoteRef, offset, length)
 	if err != nil {
 		entry.status = blockEmpty
 		return nil, fmt.Errorf("fetch block %d from %s: %w", blockIdx, fi.remoteRef, err)
