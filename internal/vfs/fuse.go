@@ -2,6 +2,7 @@ package vfs
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/user"
 	"strconv"
@@ -301,21 +302,33 @@ func (f *fuseFileNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.
 }
 
 // Open opens the file for reading.
-// FOPEN_KEEP_CACHE tells the kernel to cache page reads, which is essential
-// for mmap support — OpenSlide, libvips, and QuPath rely on mmap() to map
-// WSI tiles into memory. The kernel satisfies mmap page faults by calling
-// our Read method and caching the result in the page cache.
+// Fails immediately with EACCES if the file's Cohort Grant has been revoked via the DPO Kill-Switch.
 func (f *fuseFileNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
+	if f.bm != nil && f.bm.IsFileRevoked(f.fileID) {
+		return nil, 0, syscall.EACCES
+	}
 	return nil, fuse.FOPEN_KEEP_CACHE, 0
 }
 
 // Read reads data from the virtual file via the BlockManager.
+// If a grant is revoked while a file descriptor is already open, returns EACCES immediately.
 func (f *fuseFileNode) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
 	n, err := f.bm.ReadAt(ctx, f.fileID, dest, off)
 	if err != nil {
+		if errors.Is(err, ErrAccessRevoked) {
+			return nil, syscall.EACCES
+		}
 		return nil, syscall.EIO
 	}
 	return fuse.ReadResultData(dest[:n]), 0
+}
+
+// RevokeAndEvictByGrant purges all cached blocks and blocks future FUSE reads for files matching rule.
+func (v *FUSEVFS) RevokeAndEvictByGrant(rule CohortGrantRule) (int, int) {
+	if v.bm == nil {
+		return 0, 0
+	}
+	return v.bm.RevokeAndEvictByGrant(rule)
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
