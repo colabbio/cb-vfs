@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/colabbio/medvfs/internal/adapters"
 	"github.com/colabbio/medvfs/internal/vfs"
 	"go.uber.org/zap"
 )
@@ -29,7 +30,23 @@ type Server struct {
 
 // NewServer creates a new HTTP server for the serve engine.
 func NewServer(port int, engine *Engine, log *zap.Logger) *Server {
-	return &Server{port: port, engine: engine, acl: vfs.NewCohortAclRegistry(), log: log}
+	acl := vfs.NewCohortAclRegistry()
+	s := &Server{port: port, engine: engine, acl: acl, log: log}
+	acl.RegisterRevokeListener(func(rule vfs.CohortGrantRule) {
+		if engine != nil && engine.vfsImpl != nil {
+			if evictor, ok := engine.vfsImpl.(vfs.GrantEvictor); ok {
+				files, blocks := evictor.RevokeAndEvictByGrant(rule)
+				if log != nil {
+					log.Info("hot kill-switch evicted VFS cache for revoked grant",
+						zap.String("grantId", rule.GrantID),
+						zap.Int("evicted_files", files),
+						zap.Int("evicted_blocks", blocks),
+					)
+				}
+			}
+		}
+	})
+	return s
 }
 
 // Start begins serving HTTP requests. It blocks until ctx is cancelled.
@@ -43,6 +60,7 @@ func (s *Server) Start(ctx context.Context) {
 	mux.HandleFunc("/internal/v1/acl/sync", s.handleAclSync)
 	mux.HandleFunc("/internal/v1/acl/revoke", s.handleAclRevoke)
 	mux.HandleFunc("/internal/v1/acl/status", s.handleAclStatus)
+	mux.HandleFunc("/internal/v1/nfcore/samplesheet", s.handleNfCoreSamplesheet)
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", s.port),
@@ -172,5 +190,36 @@ func (s *Server) handleAclStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"grants": s.acl.Snapshot(),
+	})
+}
+
+func (s *Server) handleNfCoreSamplesheet(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req vfs.NfCoreSamplesheetRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.GrantID == "" {
+		req.GrantID = r.Header.Get("X-ColabBio-Grant-Id")
+	}
+	var mappings []adapters.FileMapping
+	if s.engine != nil {
+		mappings = s.engine.GetMappings("")
+	}
+	csvContent, rows, err := vfs.SynthesizeNfCoreSamplesheet(s.acl, mappings, req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"grantId":    req.GrantID,
+		"rows":       rows,
+		"outputPath": req.OutputPath,
+		"csv":        csvContent,
 	})
 }

@@ -20,8 +20,9 @@ type CohortGrantRule struct {
 // CohortAclRegistry enforces Cohort Security Boundaries (CB-SPEC-COHORT-ACL-019)
 // inside MedVFS FUSE and HTTP serve layers in real time.
 type CohortAclRegistry struct {
-	mu     sync.RWMutex
-	grants map[string]*CohortGrantRule
+	mu        sync.RWMutex
+	grants    map[string]*CohortGrantRule
+	onRevoke  []func(rule CohortGrantRule)
 }
 
 // NewCohortAclRegistry creates an empty CohortAclRegistry.
@@ -29,6 +30,17 @@ func NewCohortAclRegistry() *CohortAclRegistry {
 	return &CohortAclRegistry{
 		grants: make(map[string]*CohortGrantRule),
 	}
+}
+
+// RegisterRevokeListener registers a callback invoked asynchronously/unlocked
+// whenever a grant is revoked via the hot Kill-Switch.
+func (r *CohortAclRegistry) RegisterRevokeListener(fn func(rule CohortGrantRule)) {
+	if fn == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.onRevoke = append(r.onRevoke, fn)
 }
 
 // SyncGrant registers or updates a DPO-approved Cohort Grant.
@@ -39,22 +51,49 @@ func (r *CohortAclRegistry) SyncGrant(rule CohortGrantRule) {
 	r.grants[rule.GrantID] = &cp
 }
 
-// RevokeGrant executes an immediate hot Kill-Switch for the given grantId.
+// RevokeGrant executes an immediate hot Kill-Switch for the given grantId
+// and notifies all registered eviction listeners outside the registry lock.
 func (r *CohortAclRegistry) RevokeGrant(grantID, reason string) bool {
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	var snapshot CohortGrantRule
+	var listeners []func(rule CohortGrantRule)
 	rule, ok := r.grants[grantID]
 	if !ok {
-		r.grants[grantID] = &CohortGrantRule{
+		snapshot = CohortGrantRule{
 			GrantID:      grantID,
 			Revoked:      true,
 			RevokeReason: reason,
 		}
-		return false
+		r.grants[grantID] = &snapshot
+	} else {
+		rule.Revoked = true
+		rule.RevokeReason = reason
+		snapshot = *rule
 	}
-	rule.Revoked = true
-	rule.RevokeReason = reason
-	return true
+	listeners = append(listeners, r.onRevoke...)
+	r.mu.Unlock()
+
+	for _, fn := range listeners {
+		fn(snapshot)
+	}
+	return ok
+}
+
+// RuleMatchesPath checks if resourcePath matches the allowed paths or patient IDs of a rule.
+func RuleMatchesPath(rule CohortGrantRule, resourcePath string) bool {
+	clean := filepath.ToSlash(filepath.Clean(resourcePath))
+	for _, prefix := range rule.AllowedPaths {
+		p := filepath.ToSlash(filepath.Clean(prefix))
+		if clean == p || strings.HasPrefix(clean, strings.TrimSuffix(p, "/")+"/") {
+			return true
+		}
+	}
+	for _, pat := range rule.AllowedPatients {
+		if pat != "" && strings.Contains(clean, pat) {
+			return true
+		}
+	}
+	return false
 }
 
 // IsAllowed checks whether resourcePath is authorized under grantID.
@@ -74,19 +113,18 @@ func (r *CohortAclRegistry) IsAllowed(grantID, resourcePath string) bool {
 		return false
 	}
 
-	clean := filepath.ToSlash(filepath.Clean(resourcePath))
-	for _, prefix := range rule.AllowedPaths {
-		p := filepath.ToSlash(filepath.Clean(prefix))
-		if clean == p || strings.HasPrefix(clean, strings.TrimSuffix(p, "/")+"/") {
-			return true
-		}
+	return RuleMatchesPath(*rule, resourcePath)
+}
+
+// GetGrant returns the rule for grantID if present and active.
+func (r *CohortAclRegistry) GetGrant(grantID string) (CohortGrantRule, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	rule, ok := r.grants[grantID]
+	if !ok {
+		return CohortGrantRule{}, false
 	}
-	for _, pat := range rule.AllowedPatients {
-		if pat != "" && strings.Contains(clean, pat) {
-			return true
-		}
-	}
-	return false
+	return *rule, true
 }
 
 // Snapshot returns a copy of all active/revoked grant rules.

@@ -74,9 +74,19 @@ type VFS interface {
 	Stats() CacheStats
 }
 
+// GrantEvictor is implemented by VFS backends that support hot DPO Kill-Switch eviction.
+type GrantEvictor interface {
+	RevokeAndEvictByGrant(rule CohortGrantRule) (evictedFiles int, evictedBlocks int)
+}
+
 // SelectStrategy inspects the serve configuration and runtime environment
 // to choose the optimal virtualisation strategy.
 func SelectStrategy(cfg *config.VFSConfig) string {
+	// Rootless HPC / userspace override (SLURM / Apptainer nodes without /dev/fuse access)
+	if os.Getenv("MEDVFS_USERSPACE_STAGING") == "true" || os.Getenv("MEDVFS_USERSPACE_STAGING") == "1" {
+		return StrategyDownload
+	}
+
 	// Explicit FUSE config → FUSE strategy
 	if cfg.Serve != nil && cfg.Serve.FUSE != nil {
 		if cfg.Serve.FUSE.MountPoint != "" {
@@ -89,7 +99,7 @@ func SelectStrategy(cfg *config.VFSConfig) string {
 		return StrategyFUSE
 	}
 
-	// Fallback: download strategy
+	// Fallback: userspace download/staging strategy
 	return StrategyDownload
 }
 
@@ -101,6 +111,15 @@ func New(cfg *config.VFSConfig, strategy string) (VFS, error) {
 			return nil, fmt.Errorf("FUSE strategy requires serve.fuse configuration")
 		}
 		return NewFUSEVFS(cfg.Serve.FUSE)
+	case StrategyDownload, StrategySymlinkTree:
+		stagingDir := ""
+		if cfg != nil {
+			stagingDir = cfg.Storage.OutputDir
+			if stagingDir == "" && cfg.Serve != nil && cfg.Serve.FUSE != nil {
+				stagingDir = cfg.Serve.FUSE.MountPoint
+			}
+		}
+		return NewUserspaceVFS(stagingDir, strategy)
 	default:
 		return nil, fmt.Errorf("VFS strategy %q not yet implemented", strategy)
 	}

@@ -2,6 +2,7 @@ package vfs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,9 @@ import (
 
 	"go.uber.org/zap"
 )
+
+// ErrAccessRevoked is returned when a virtual file's Cohort Grant has been revoked by the DPO Kill-Switch.
+var ErrAccessRevoked = errors.New("medvfs: file access revoked by DPO kill-switch")
 
 const (
 	// DefaultBlockSize is the default block size in bytes (4 MB).
@@ -68,6 +72,9 @@ type BlockManager struct {
 	// files maps fileID → file metadata.
 	files map[string]*fileInfo
 
+	// revokedFiles maps fileID → grantID for files evicted via hot DPO Kill-Switch.
+	revokedFiles map[string]string
+
 	// stats tracks cache metrics.
 	stats CacheStats
 
@@ -119,8 +126,60 @@ func NewBlockManager(blockSize int64, cacheDir string, cacheMaxBytes int64, fetc
 		cacheMaxBytes: cacheMaxBytes,
 		fetcher:       fetcher,
 		files:         make(map[string]*fileInfo),
+		revokedFiles:  make(map[string]string),
 		log:           log,
 	}, nil
+}
+
+// IsFileRevoked reports whether fileID has been blocked by a hot DPO Kill-Switch.
+func (bm *BlockManager) IsFileRevoked(fileID string) bool {
+	bm.mu.RLock()
+	defer bm.mu.RUnlock()
+	_, revoked := bm.revokedFiles[fileID]
+	return revoked
+}
+
+// RevokeAndEvictByGrant marks all virtual files matching the revoked grant rule as inaccessible
+// and purges their in-memory and on-disk cached blocks without lock inversion.
+func (bm *BlockManager) RevokeAndEvictByGrant(rule CohortGrantRule) (evictedFiles int, evictedBlocks int) {
+	bm.mu.Lock()
+	matchAll := len(rule.AllowedPaths) == 0 && len(rule.AllowedPatients) == 0
+	var targets []*fileInfo
+	for fileID, fi := range bm.files {
+		if matchAll || RuleMatchesPath(rule, fileID) {
+			bm.revokedFiles[fileID] = rule.GrantID
+			targets = append(targets, fi)
+			evictedFiles++
+		}
+	}
+	bm.mu.Unlock()
+
+	for _, fi := range targets {
+		fi.mu.Lock()
+		for _, entry := range fi.blocks {
+			entry.mu.Lock()
+			if entry.status == blockCached {
+				entry.data = nil
+				if entry.diskPath != "" {
+					_ = os.Remove(entry.diskPath)
+				}
+				entry.status = blockEmpty
+				evictedBlocks++
+			}
+			entry.mu.Unlock()
+		}
+		fi.mu.Unlock()
+	}
+
+	if evictedBlocks > 0 {
+		bm.mu.Lock()
+		bm.stats.CachedBlocks -= int64(evictedBlocks)
+		if bm.stats.CachedBlocks < 0 {
+			bm.stats.CachedBlocks = 0
+		}
+		bm.mu.Unlock()
+	}
+	return evictedFiles, evictedBlocks
 }
 
 // SetPrefetcher attaches a prefetch engine to this block manager.
@@ -174,6 +233,10 @@ func (bm *BlockManager) BlockSize() int64 {
 // It fetches blocks on-demand from the remote source if not cached.
 func (bm *BlockManager) ReadAt(ctx context.Context, fileID string, p []byte, off int64) (int, error) {
 	bm.mu.RLock()
+	if grantID, revoked := bm.revokedFiles[fileID]; revoked {
+		bm.mu.RUnlock()
+		return 0, fmt.Errorf("%w (grant=%s)", ErrAccessRevoked, grantID)
+	}
 	fi, ok := bm.files[fileID]
 	bm.mu.RUnlock()
 	if !ok {
