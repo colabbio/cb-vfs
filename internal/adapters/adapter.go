@@ -32,6 +32,11 @@ type Adapter interface {
 // via download, symlink, or FUSE virtual node. Each adapter that supports
 // file-level access returns a slice of these from BuildFileTree.
 type FileMapping struct {
+	// SourceID identifies which source in vfs.yaml produced this mapping,
+	// allowing DispatchFetcher to route byte-range reads through the source's
+	// authenticated client (CB-SPEC-CRED-022 §5.3).
+	SourceID string
+
 	// LogicalPath is the organised path relative to the VFS root.
 	// Example: "PT001/20240115_CHEST_CT/series_001/img_0001.dcm"
 	LogicalPath string

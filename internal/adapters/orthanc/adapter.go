@@ -18,6 +18,7 @@ import (
 
 	"github.com/colabbio/medvfs/internal/adapters"
 	"github.com/colabbio/medvfs/internal/config"
+	"github.com/colabbio/medvfs/internal/secrets"
 	"go.uber.org/zap"
 )
 
@@ -72,11 +73,15 @@ func New(cfg config.SourceConfig, log *zap.Logger) *Adapter {
 	if cfg.Orthanc != nil && cfg.Orthanc.DICOMwebPath != "" {
 		webPath = cfg.Orthanc.DICOMwebPath
 	}
+	client, err := secrets.BuildAuthenticatedHTTPClient(cfg.Endpoint, cfg.Auth, 120*time.Second)
+	if err != nil || client == nil {
+		client = &http.Client{Timeout: 120 * time.Second}
+	}
 	return &Adapter{
-		cfg:  cfg,
-		log:  log,
-		base: strings.TrimRight(cfg.Endpoint, "/") + webPath,
-		client: &http.Client{Timeout: 120 * time.Second},
+		cfg:    cfg,
+		log:    log,
+		base:   strings.TrimRight(cfg.Endpoint, "/") + webPath,
+		client: client,
 	}
 }
 
@@ -90,6 +95,13 @@ func (a *Adapter) Validate(ctx context.Context) error {
 	}
 	if a.cfg.Orthanc == nil {
 		return fmt.Errorf("orthanc adapter %q: orthanc: block is required", a.cfg.ID)
+	}
+	if a.cfg.Auth != nil && a.cfg.Auth.Type != "" && a.cfg.Auth.Type != "none" {
+		client, err := secrets.BuildAuthenticatedHTTPClient(a.cfg.Endpoint, a.cfg.Auth, 120*time.Second)
+		if err != nil {
+			return fmt.Errorf("orthanc adapter %q: auth: %w", a.cfg.ID, err)
+		}
+		a.client = client
 	}
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, a.base+"/studies?limit=1", nil)
 	a.setAuth(req)
@@ -300,17 +312,37 @@ func (a *Adapter) setAuth(req *http.Request) {
 	if a.cfg.Auth == nil || a.cfg.Auth.Type == "none" {
 		return
 	}
+	// If client uses AuthenticatedRoundTripper, it handles auth automatically.
+	// Keep explicit header fallback when a custom http.Client was injected in tests.
+	if _, ok := a.client.Transport.(*secrets.AuthenticatedRoundTripper); ok {
+		return
+	}
+	bundle, err := secrets.ResolveAuthBundle(req.Context(), a.cfg.Auth)
+	if err != nil {
+		return
+	}
 	switch a.cfg.Auth.Type {
 	case "basic":
-		if a.cfg.Auth.Token != "" {
-			parts := strings.SplitN(a.cfg.Auth.Token, ":", 2)
-			if len(parts) == 2 {
-				req.SetBasicAuth(parts[0], parts[1])
-			}
+		user := bundle.FirstString("username", "user")
+		pass := bundle.FirstString("password", "pass")
+		if user != "" {
+			req.SetBasicAuth(user, pass)
 		}
 	case "bearer":
-		if a.cfg.Auth.Token != "" {
-			req.Header.Set("Authorization", "Bearer "+a.cfg.Auth.Token)
+		if tok := bundle.FirstString("token", "access_token", "value"); tok != "" {
+			req.Header.Set("Authorization", "Bearer "+tok)
+		}
+	case "api_key":
+		header := "X-API-Key"
+		prefix := ""
+		if a.cfg.Auth.APIKey != nil {
+			if a.cfg.Auth.APIKey.HeaderName != "" {
+				header = a.cfg.Auth.APIKey.HeaderName
+			}
+			prefix = a.cfg.Auth.APIKey.Prefix
+		}
+		if keyVal := bundle.FirstString("api_key", "token", "value"); keyVal != "" {
+			req.Header.Set(header, prefix+keyVal)
 		}
 	}
 }
@@ -394,6 +426,7 @@ func (a *Adapter) BuildFileTree(ctx context.Context, outDir string, strategy str
 				logicalPath := filepath.Join(patientID, studyDir, seriesDir, sopUID+".dcm")
 
 				fm := adapters.FileMapping{
+					SourceID:    a.cfg.ID,
 					LogicalPath: logicalPath,
 					RemoteRef:   wadoURL,
 					ContentType: "application/dicom",
