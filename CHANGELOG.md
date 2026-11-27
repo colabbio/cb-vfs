@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.0] - 2026-11-27
+
+### Added
+- **Open-Source Public Release**: Licensed under **Apache 2.0** (`Copyright 2026 ColabBio`), with self-contained documentation and the MedVFS preprint (`docs/medvfs_article.md`).
+- **Rootless HPC & Cohort ACL Kill-Switch**: Hot FUSE cache eviction on grant revocation, rootless userspace mode for HPC environments, and `nf-core` samplesheet synthesis.
+- **Unified Credentials (`CB-SPEC-CRED-022` Phase 1)**: `SecretBundle`, `AuthenticatedRoundTripper`, and per-source fetchers (`k8s://`, `env://`, `file://`).
+- **CI, Demo & Public Smoke Suite**: GitHub Actions CI (`.github/workflows/ci.yml`), 1-command self-contained `make demo`, expanded unit tests across `internal/...`, and opt-in `make test-public` (FHIR R4, Orthanc DICOMweb, HTTP Range, unauthenticated `gs://` GCS, and BigQuery public OMOP).
+
+### Fixed
+- **Orthanc / DICOMweb JSON Parsing**: Support non-string `Value` entries (e.g., `PersonName` `{"Alphabetic": "..."}` objects) in QIDO-RS responses.
+
 ## [0.4.1] - 2026-11-15
 
 ### Added / Changed
