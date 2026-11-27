@@ -237,8 +237,11 @@ make test
 # Run integration tests (requires OMOP_DSN env var)
 make test-integration
 
-# Run live smoke tests against public FHIR, Orthanc DICOMweb, and HTTP Range endpoints
+# Run live smoke tests against public servers (FHIR R4, Orthanc DICOMweb, HTTP Range, gs:// GCS)
 make test-public
+
+# Also run the public BigQuery OMOP dataset test (requires GCP ADC credentials)
+MEDVFS_GCP_PROJECT=<your-gcp-project> make test-public
 
 # Lint
 make lint
@@ -246,6 +249,13 @@ make lint
 # Start local OMOP test database
 make dev-db
 ```
+
+The `make test-public` suite ([public_servers_test.go](test/public/public_servers_test.go), gated behind `//go:build public`) verifies live network connectivity against:
+- **FHIR R4:** `https://hapi.fhir.org/baseR4` (`TestPublicFHIR_HAPIR4`)
+- **DICOMweb (QIDO-RS):** `https://orthanc.uclouvain.be/demo/dicom-web` (`TestPublicDICOMweb_OrthancDemo`)
+- **HTTP Range:** `https://raw.githubusercontent.com/colabbio/cb-vfs/main/LICENSE` (`TestPublicHTTPRange_FetchBlock`)
+- **GCS (`gs://`, unauthenticated):** `gs://gcp-public-data-landsat/index.csv.gz` (`TestPublicGCS_FetchBlock`)
+- **BigQuery Public OMOP:** `bigquery-public-data.cms_synthetic_patient_data_omop.person` (`TestPublicBigQuery_OMOP`, skipped unless `MEDVFS_GCP_PROJECT` is set)
 
 ---
 
