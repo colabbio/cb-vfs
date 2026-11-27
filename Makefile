@@ -1,4 +1,4 @@
-.PHONY: build demo run-setup run-serve validate test clean docker-build lint helm-lint helm-template helm-template-sidecar dev-compose-up dev-compose-down dev-compose-logs test-all
+.PHONY: build demo run-setup run-serve validate test test-integration test-public clean docker-build lint helm-lint helm-template helm-template-sidecar dev-compose-up dev-compose-down dev-compose-logs test-all
 
 BINARY := medvfs
 CMD_PATH := ./cmd/medvfs
@@ -31,6 +31,10 @@ test:
 
 test-integration:
 	go test ./internal/... -v -tags integration -timeout 120s
+
+# Live smoke tests against public FHIR R4, Orthanc DICOMweb, and HTTP Range servers
+test-public:
+	go test -tags public ./test/public/... -v -timeout 60s
 
 # Start a local OMOP test database via Docker (for development)
 dev-db:

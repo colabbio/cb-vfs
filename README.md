@@ -237,6 +237,9 @@ make test
 # Run integration tests (requires OMOP_DSN env var)
 make test-integration
 
+# Run live smoke tests against public FHIR, Orthanc DICOMweb, and HTTP Range endpoints
+make test-public
+
 # Lint
 make lint
 
