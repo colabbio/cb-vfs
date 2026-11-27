@@ -71,7 +71,7 @@ type FileMapping struct {
 
 ### 1. OMOP — Clinical Records
 
-> **Source:** [omop/adapter.go](../internal/adapters/omop/adapter.go)
+> **Source:** [omop/omop_adapter.go](../internal/adapters/omop/omop_adapter.go)
 
 Connects to an OMOP CDM PostgreSQL database and executes SQL queries. Results are materialised as CSV files.
 
@@ -111,7 +111,7 @@ sources:
 
 ### 2. FHIR — Demographics & Observations
 
-> **Source:** [fhir/adapter.go](../internal/adapters/fhir/adapter.go)
+> **Source:** [fhir/fhir_adapter.go](../internal/adapters/fhir/fhir_adapter.go)
 
 Queries a FHIR R4 REST API, paginates through Bundles, and flattens resources into CSV using dot-path field extraction.
 

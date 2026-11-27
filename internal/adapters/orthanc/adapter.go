@@ -354,7 +354,8 @@ func (a *Adapter) setAuth(req *http.Request) {
 // FileMappings with WADO-RS instance URLs as RemoteRef.
 //
 // Logical path structure:
-//   {PatientID}/{StudyDate}_{Modality}/{SeriesNumber}/{SOPInstanceUID}.dcm
+//
+//	{PatientID}/{StudyDate}_{Modality}/{SeriesNumber}/{SOPInstanceUID}.dcm
 //
 // Strategy:
 //   - "download"      → downloads instances via WADO-RS

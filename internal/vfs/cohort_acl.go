@@ -9,20 +9,20 @@ import (
 
 // CohortGrantRule stores the DPO-approved paths/patient prefixes for a single grantId.
 type CohortGrantRule struct {
-	GrantID        string    `json:"grantId"`
-	AllowedPaths   []string  `json:"allowedPaths"`
-	AllowedPatients []string `json:"allowedPatients"`
-	ExpiresAt      time.Time `json:"expiresAt"`
-	Revoked        bool      `json:"revoked"`
-	RevokeReason   string    `json:"revokeReason,omitempty"`
+	GrantID         string    `json:"grantId"`
+	AllowedPaths    []string  `json:"allowedPaths"`
+	AllowedPatients []string  `json:"allowedPatients"`
+	ExpiresAt       time.Time `json:"expiresAt"`
+	Revoked         bool      `json:"revoked"`
+	RevokeReason    string    `json:"revokeReason,omitempty"`
 }
 
 // CohortAclRegistry enforces Cohort Security Boundaries (CB-SPEC-COHORT-ACL-019)
 // inside MedVFS FUSE and HTTP serve layers in real time.
 type CohortAclRegistry struct {
-	mu        sync.RWMutex
-	grants    map[string]*CohortGrantRule
-	onRevoke  []func(rule CohortGrantRule)
+	mu       sync.RWMutex
+	grants   map[string]*CohortGrantRule
+	onRevoke []func(rule CohortGrantRule)
 }
 
 // NewCohortAclRegistry creates an empty CohortAclRegistry.

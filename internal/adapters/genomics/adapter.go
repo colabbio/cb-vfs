@@ -29,18 +29,18 @@ import (
 
 // fileEntry represents one genomic file found during scanning.
 type fileEntry struct {
-	PatientID  string
-	Format     string // bam | cram | vcf | fastq | bed | hdf5
-	Path       string // absolute local path or cloud URI (gs:// or s3://)
-	IndexPath  string // empty if not applicable or not found
-	SizeBytes  int64
+	PatientID string
+	Format    string // bam | cram | vcf | fastq | bed | hdf5
+	Path      string // absolute local path or cloud URI (gs:// or s3://)
+	IndexPath string // empty if not applicable or not found
+	SizeBytes int64
 }
 
 // Adapter scans genomics storage and produces a manifest CSV.
 type Adapter struct {
-	cfg    config.SourceConfig
-	log    *zap.Logger
-	pidRe  *regexp.Regexp // compiled patient_id_regex, or nil
+	cfg   config.SourceConfig
+	log   *zap.Logger
+	pidRe *regexp.Regexp // compiled patient_id_regex, or nil
 }
 
 // New creates a new Genomics adapter.
@@ -280,7 +280,6 @@ func formatToMIME(format string) string {
 }
 
 // ─── NFS backend ─────────────────────────────────────────────────────────────
-
 
 func (a *Adapter) scanNFS(_ context.Context) ([]fileEntry, error) {
 	g := a.cfg.Genomics

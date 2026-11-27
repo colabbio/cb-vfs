@@ -67,9 +67,9 @@ func TestApplySplits(t *testing.T) {
 	result := ApplySplits(mappings, splits)
 
 	expected := map[string]string{
-		"P001": "train/P001/slide.svs",
-		"P002": "val/P002/slide.svs",
-		"P003": "test/P003/slide.svs",
+		"P001":    "train/P001/slide.svs",
+		"P002":    "val/P002/slide.svs",
+		"P003":    "test/P003/slide.svs",
 		"UNKNOWN": "unassigned/UNKNOWN/slide.svs",
 	}
 

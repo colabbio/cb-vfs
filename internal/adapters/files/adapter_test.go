@@ -208,8 +208,8 @@ func TestValidate(t *testing.T) {
 			},
 		},
 		{
-			name: "missing files block",
-			cfg:  config.SourceConfig{ID: "bad"},
+			name:    "missing files block",
+			cfg:     config.SourceConfig{ID: "bad"},
 			wantErr: true,
 		},
 		{

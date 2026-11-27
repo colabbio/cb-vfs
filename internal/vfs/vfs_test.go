@@ -229,9 +229,9 @@ func TestBlockManagerEviction(t *testing.T) {
 	fetcher := NewHTTPFetcher(server.Client())
 
 	bm, err := NewBlockManager(
-		1*1024*1024,   // 1 MB blocks
+		1*1024*1024, // 1 MB blocks
 		cacheDir,
-		2*1024*1024,   // 2 MB cache limit — can only hold 2 blocks
+		2*1024*1024, // 2 MB cache limit — can only hold 2 blocks
 		fetcher,
 		nil,
 	)
@@ -508,4 +508,3 @@ func TestReadU16U32(t *testing.T) {
 		}
 	})
 }
-

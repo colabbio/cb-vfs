@@ -16,7 +16,6 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-
 // Result holds metadata about a successfully materialised source.
 type Result struct {
 	SourceID  string    `json:"source_id"`
@@ -130,7 +129,6 @@ func (e *Engine) Run(ctx context.Context) ([]Result, error) {
 
 	return results, nil
 }
-
 
 func writeManifest(outDir string, results []Result) error {
 	data, err := json.MarshalIndent(results, "", "  ")

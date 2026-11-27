@@ -19,7 +19,6 @@ import (
 	"go.uber.org/zap"
 )
 
-
 // Engine orchestrates the serve lifecycle:
 //  1. Build adapters → collect FileMappings
 //  2. Run non-FileProvider adapters (FHIR/OMOP produce CSVs)
@@ -92,7 +91,10 @@ func (e *Engine) Run(ctx context.Context) error {
 				zap.String("type", src.Type),
 			)
 			progress := make(chan adapters.Event, 16)
-			go func() { for range progress {} }() // drain
+			go func() {
+				for range progress {
+				}
+			}() // drain
 			if err := adapter.Fetch(ctx, outDir, progress); err != nil {
 				e.log.Error("tabular adapter fetch failed",
 					zap.String("source", src.ID),

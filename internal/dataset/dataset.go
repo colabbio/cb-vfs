@@ -134,7 +134,7 @@ type PatientLink struct {
 type LinkMap struct {
 	Links   []PatientLink
 	ByID    map[string]*PatientLink // canonical_id → link
-	Columns []string               // all source columns from the CSV
+	Columns []string                // all source columns from the CSV
 }
 
 // LoadPatientLinks reads a patient linking CSV.
@@ -287,14 +287,14 @@ func inferSourceType(sourceID string) string {
 
 // DatasetManifest holds versioning metadata for a materialised dataset.
 type DatasetManifest struct {
-	DatasetID      string            `json:"dataset_id"`
-	RunID          string            `json:"run_id"`
-	ManifestSHA256 string            `json:"manifest_sha256"`
-	FileCount      int               `json:"file_count"`
-	TotalBytes     int64             `json:"total_bytes"`
-	Sources        map[string]int    `json:"sources"`
-	Splits         map[string]int    `json:"splits,omitempty"`
-	CreatedAt      string            `json:"created_at"`
+	DatasetID      string         `json:"dataset_id"`
+	RunID          string         `json:"run_id"`
+	ManifestSHA256 string         `json:"manifest_sha256"`
+	FileCount      int            `json:"file_count"`
+	TotalBytes     int64          `json:"total_bytes"`
+	Sources        map[string]int `json:"sources"`
+	Splits         map[string]int `json:"splits,omitempty"`
+	CreatedAt      string         `json:"created_at"`
 }
 
 // GenerateManifest creates a DatasetManifest from the current set of mappings.

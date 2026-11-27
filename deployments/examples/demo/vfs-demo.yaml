@@ -1,0 +1,22 @@
+version: "1"
+metadata:
+  name: medvfs-quick-demo
+  description: "Self-contained local demo with synthetic clinical and imaging files"
+
+storage:
+  type: emptydir
+  output_dir: /tmp/medvfs-demo-out
+
+setup:
+  parallelism: 2
+
+sources:
+  - id: demo_files
+    type: files
+    files:
+      storage: nfs
+      base_path: deployments/examples/demo/data
+      include:
+        - "**/*"
+    materialize:
+      output: demo_bundle

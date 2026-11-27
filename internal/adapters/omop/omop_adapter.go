@@ -15,7 +15,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-
 // OMOPAdapter fetches data from an OMOP CDM PostgreSQL database and writes CSV files.
 type OMOPAdapter struct {
 	cfg config.SourceConfig
@@ -151,4 +150,3 @@ func valueToString(v any) string {
 		return fmt.Sprintf("%v", t)
 	}
 }
-

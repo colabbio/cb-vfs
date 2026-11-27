@@ -1,5 +1,8 @@
 # MedVFS — Medical Virtual File System
 
+[![CI](https://github.com/colabbio/cb-vfs/actions/workflows/ci.yml/badge.svg)](https://github.com/colabbio/cb-vfs/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 **MedVFS** is a data-plane orchestrator that virtualises heterogeneous clinical data sources — OMOP databases, FHIR servers, DICOM/PACS archives, genomics stores, static datasets — as local files consumable by ML training containers and Nextflow pipelines. It provides automated dataset splits, cross-source patient linking, deterministic versioning, and writable output sync for reproducible AI workflows.
 
 > *"The data doesn't move; the model goes to the data."*
@@ -225,7 +228,10 @@ cb-vfs/
 ## Development
 
 ```bash
-# Run all tests
+# Run self-contained 1-command demo (zero external services required)
+make demo
+
+# Run all unit tests
 make test
 
 # Run integration tests (requires OMOP_DSN env var)
@@ -237,6 +243,19 @@ make lint
 # Start local OMOP test database
 make dev-db
 ```
+
+---
+
+## Component Maturity
+
+| Component | Status | Notes |
+|---|---|---|
+| Core CLI (`validate`, `setup`, `serve`) | Stable | Static Go binary (`cmd/medvfs`) |
+| FUSE Daemon, LRU Block Cache & L1/L2/L3 Prefetch | Stable | HTTP Range streaming (GCS, S3, NFS) & `/proxy` fallback |
+| Dataset Engine & Secrets (`k8s://`, `env://`, `file://`) | Stable | Deterministic splits, SHA-256 manifests, Cohort ACL kill-switch |
+| Source Adapters (`omop`, `fhir`, `omero`, `orthanc`, `dicom`, `genomics`, `files`, `sql`, `bigquery`) | Active | Unit tests + mock HTTP tests; live DB/PACS via integration suite |
+| Kubernetes Helm Chart (`DaemonSet`, `Sidecar`, `Standalone`) | Beta | Production chart in `deployments/helm/medvfs/` |
+| Kubernetes CSI Driver (`csi-driver.yaml`) | Experimental | Skeleton only — planned for dynamic multi-tenant provisioning |
 
 ---
 
