@@ -1,11 +1,21 @@
-.PHONY: build run-setup run-serve validate test clean docker-build lint helm-lint helm-template helm-template-sidecar dev-compose-up dev-compose-down dev-compose-logs test-all
+.PHONY: build demo run-setup run-serve validate test test-integration test-public clean docker-build lint helm-lint helm-template helm-template-sidecar dev-compose-up dev-compose-down dev-compose-logs test-all
 
 BINARY := medvfs
 CMD_PATH := ./cmd/medvfs
 EXAMPLE_CONFIG ?= deployments/examples/vfs-dev.yaml
+DEMO_CONFIG := deployments/examples/demo/vfs-demo.yaml
 
 build:
 	go build -o $(BINARY) $(CMD_PATH)
+
+# Self-contained 1-command demo (zero external services required)
+demo: build
+	rm -rf /tmp/medvfs-demo-out
+	./$(BINARY) validate --config $(DEMO_CONFIG)
+	./$(BINARY) setup --config $(DEMO_CONFIG)
+	@echo "--- Demo output ---"
+	@ls -la /tmp/medvfs-demo-out/
+	@cat /tmp/medvfs-demo-out/manifest.json
 
 # Run setup with an example spec (requires a running OMOP Postgres)
 run-setup: build
@@ -21,6 +31,10 @@ test:
 
 test-integration:
 	go test ./internal/... -v -tags integration -timeout 120s
+
+# Live smoke tests against public FHIR R4, Orthanc DICOMweb, and HTTP Range servers
+test-public:
+	go test -tags public ./test/public/... -v -timeout 60s
 
 # Start a local OMOP test database via Docker (for development)
 dev-db:

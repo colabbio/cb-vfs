@@ -154,7 +154,7 @@ func TestDICOMIsDICOMFile(t *testing.T) {
 		{"image.dcm", true},
 		{"image.dicom", true},
 		{"DICOMDIR", true},
-		{"image", true},   // no extension — possibly DICOM
+		{"image", true}, // no extension — possibly DICOM
 		{"image.txt", false},
 		{"image.csv", false},
 		{"image.jpg", false},

@@ -30,18 +30,18 @@ import (
 
 // dicomFile holds parsed metadata from a single DICOM file.
 type dicomFile struct {
-	Path             string
-	PatientID        string
-	PatientName      string
-	StudyInstanceUID string
-	StudyDate        string
-	StudyTime        string
-	Modality         string
+	Path              string
+	PatientID         string
+	PatientName       string
+	StudyInstanceUID  string
+	StudyDate         string
+	StudyTime         string
+	Modality          string
 	SeriesInstanceUID string
-	SeriesNumber     string
-	SOPInstanceUID   string
-	InstanceNumber   string
-	SizeBytes        int64
+	SeriesNumber      string
+	SOPInstanceUID    string
+	InstanceNumber    string
+	SizeBytes         int64
 }
 
 // Adapter scans local DICOM directories and optionally watches for new files.

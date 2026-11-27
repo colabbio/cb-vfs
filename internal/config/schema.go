@@ -2,15 +2,15 @@ package config
 
 // VFSConfig is the top-level structure parsed from vfs.yaml
 type VFSConfig struct {
-	Version  string          `yaml:"version"`
-	Metadata MetadataConfig  `yaml:"metadata"`
-	Storage  StorageConfig   `yaml:"storage"`
-	Setup    SetupConfig     `yaml:"setup"`
-	Serve    *ServeConfig    `yaml:"serve,omitempty"`
-	Dataset  *DatasetConfig  `yaml:"dataset,omitempty"`
-	Output   *OutputConfig   `yaml:"output,omitempty"`
-	Sources  []SourceConfig  `yaml:"sources"`
-	Mount    MountConfig     `yaml:"mount"`
+	Version  string         `yaml:"version"`
+	Metadata MetadataConfig `yaml:"metadata"`
+	Storage  StorageConfig  `yaml:"storage"`
+	Setup    SetupConfig    `yaml:"setup"`
+	Serve    *ServeConfig   `yaml:"serve,omitempty"`
+	Dataset  *DatasetConfig `yaml:"dataset,omitempty"`
+	Output   *OutputConfig  `yaml:"output,omitempty"`
+	Sources  []SourceConfig `yaml:"sources"`
+	Mount    MountConfig    `yaml:"mount"`
 }
 
 type MetadataConfig struct {
@@ -36,22 +36,22 @@ type SetupConfig struct {
 
 // SourceConfig describes one data source to materialise.
 type SourceConfig struct {
-	ID          string             `yaml:"id"`
-	Type        string             `yaml:"type"` // omop | fhir | omero | orthanc | genomics | dicom | files
-	DSNSecret   string             `yaml:"dsn_secret,omitempty"`
-	DSN         string             `yaml:"dsn,omitempty"`
-	Query       string             `yaml:"query,omitempty"`        // OMOP: SQL query
-	Endpoint    string             `yaml:"endpoint,omitempty"`     // FHIR/OMERO/Orthanc: base URL
-	Auth        *AuthConfig        `yaml:"auth,omitempty"`
-	FHIR        *FHIRQueryConfig   `yaml:"fhir,omitempty"`
-	OMERO       *OMEROQueryConfig  `yaml:"omero,omitempty"`
+	ID          string              `yaml:"id"`
+	Type        string              `yaml:"type"` // omop | fhir | omero | orthanc | genomics | dicom | files
+	DSNSecret   string              `yaml:"dsn_secret,omitempty"`
+	DSN         string              `yaml:"dsn,omitempty"`
+	Query       string              `yaml:"query,omitempty"`    // OMOP: SQL query
+	Endpoint    string              `yaml:"endpoint,omitempty"` // FHIR/OMERO/Orthanc: base URL
+	Auth        *AuthConfig         `yaml:"auth,omitempty"`
+	FHIR        *FHIRQueryConfig    `yaml:"fhir,omitempty"`
+	OMERO       *OMEROQueryConfig   `yaml:"omero,omitempty"`
 	Orthanc     *OrthancQueryConfig `yaml:"orthanc,omitempty"`
-	Genomics    *GenomicsConfig    `yaml:"genomics,omitempty"`
-	DICOM       *DICOMConfig       `yaml:"dicom,omitempty"`
-	Files       *FilesConfig       `yaml:"files,omitempty"`
-	SQL         *SQLConfig         `yaml:"sql,omitempty"`
-	BigQuery    *BigQueryConfig    `yaml:"bigquery,omitempty"`
-	Materialize MaterializeConfig  `yaml:"materialize"`
+	Genomics    *GenomicsConfig     `yaml:"genomics,omitempty"`
+	DICOM       *DICOMConfig        `yaml:"dicom,omitempty"`
+	Files       *FilesConfig        `yaml:"files,omitempty"`
+	SQL         *SQLConfig          `yaml:"sql,omitempty"`
+	BigQuery    *BigQueryConfig     `yaml:"bigquery,omitempty"`
+	Materialize MaterializeConfig   `yaml:"materialize"`
 }
 
 // SQLConfig defines configuration for generic SQL databases (PostgreSQL, Cloud SQL).
@@ -108,20 +108,20 @@ type OMEROImageFilter struct {
 // none | basic | bearer | api_key | oauth2_client_credentials | smart_on_fhir |
 // smart_backend_jwt | mtls | mtls_oauth2 | omero_session | aws_sigv4 | gcp_service_account
 type AuthConfig struct {
-	Type                 string            `yaml:"type"`                              // Auth strategy identifier
-	SecretRef            string            `yaml:"secret_ref,omitempty"`              // k8s:// | vault:// | env:// | file://
-	Token                string            `yaml:"token,omitempty"`                   // dev only — literal bearer/basic token
-	Username             string            `yaml:"username,omitempty"`                // optional override username
-	Password             string            `yaml:"password,omitempty"`                // dev only — literal password
-	ClientID             string            `yaml:"client_id,omitempty"`               // legacy SMART-on-FHIR / OAuth2 client ID
-	ClientSecret         string            `yaml:"client_secret,omitempty"`           // dev only — literal client secret
-	TokenURL             string            `yaml:"token_url,omitempty"`               // legacy SMART-on-FHIR token endpoint
-	Scope                string            `yaml:"scope,omitempty"`                   // legacy space-separated scopes
-	OAuth2               *OAuth2AuthConfig `yaml:"oauth2,omitempty"`                  // structured OAuth2 & SMART Backend Services config
-	MTLS                 *MTLSAuthConfig   `yaml:"mtls,omitempty"`                    // mutual TLS client certificate & CA config
-	APIKey               *APIKeyAuthConfig `yaml:"api_key,omitempty"`                 // custom API gateway header config
-	PropagateCohortGrant bool              `yaml:"propagate_cohort_grant,omitempty"`  // forward X-ColabBio-Grant-Id upstream
-	GrantID              string            `yaml:"grant_id,omitempty"`                // explicit DPO cohort grant ID
+	Type                 string            `yaml:"type"`                             // Auth strategy identifier
+	SecretRef            string            `yaml:"secret_ref,omitempty"`             // k8s:// | vault:// | env:// | file://
+	Token                string            `yaml:"token,omitempty"`                  // dev only — literal bearer/basic token
+	Username             string            `yaml:"username,omitempty"`               // optional override username
+	Password             string            `yaml:"password,omitempty"`               // dev only — literal password
+	ClientID             string            `yaml:"client_id,omitempty"`              // legacy SMART-on-FHIR / OAuth2 client ID
+	ClientSecret         string            `yaml:"client_secret,omitempty"`          // dev only — literal client secret
+	TokenURL             string            `yaml:"token_url,omitempty"`              // legacy SMART-on-FHIR token endpoint
+	Scope                string            `yaml:"scope,omitempty"`                  // legacy space-separated scopes
+	OAuth2               *OAuth2AuthConfig `yaml:"oauth2,omitempty"`                 // structured OAuth2 & SMART Backend Services config
+	MTLS                 *MTLSAuthConfig   `yaml:"mtls,omitempty"`                   // mutual TLS client certificate & CA config
+	APIKey               *APIKeyAuthConfig `yaml:"api_key,omitempty"`                // custom API gateway header config
+	PropagateCohortGrant bool              `yaml:"propagate_cohort_grant,omitempty"` // forward X-ColabBio-Grant-Id upstream
+	GrantID              string            `yaml:"grant_id,omitempty"`               // explicit DPO cohort grant ID
 }
 
 // OAuth2AuthConfig configures OAuth2 client_credentials and SMART Backend Services (RFC 7523 private_key_jwt).
@@ -175,7 +175,7 @@ type FHIRQueryConfig struct {
 
 // MaterializeConfig defines the output file for a source.
 type MaterializeConfig struct {
-	Output      string `yaml:"output"`                // relative path under mount (e.g. patients.csv)
+	Output      string `yaml:"output"`                 // relative path under mount (e.g. patients.csv)
 	Format      string `yaml:"format,omitempty"`       // csv (default) | dicom_dir | vcf | fastq
 	DownloadDir string `yaml:"download_dir,omitempty"` // directory for downloaded files (type: omero/orthanc)
 }

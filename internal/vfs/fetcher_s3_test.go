@@ -33,13 +33,13 @@ func TestParseS3URI_Valid(t *testing.T) {
 
 func TestParseS3URI_Invalid(t *testing.T) {
 	invalid := []string{
-		"gs://bucket/key",      // wrong scheme
-		"s3://",                // empty
-		"s3://bucket",          // no key
-		"s3:///key",            // empty bucket
-		"s3://bucket/",         // empty key
-		"http://example.com",   // wrong scheme
-		"",                     // empty string
+		"gs://bucket/key",    // wrong scheme
+		"s3://",              // empty
+		"s3://bucket",        // no key
+		"s3:///key",          // empty bucket
+		"s3://bucket/",       // empty key
+		"http://example.com", // wrong scheme
+		"",                   // empty string
 	}
 
 	for _, uri := range invalid {

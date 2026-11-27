@@ -1,0 +1,4 @@
+# Synthetic WSI metadata placeholder for local MedVFS demo
+slide_id=TCGA-DEMO-001
+patient_id=P001
+stain=H&E

@@ -233,10 +233,10 @@ func (a *Adapter) login(ctx context.Context) error {
 
 	loginURL := a.cfg.Endpoint + apiV0 + "/login/"
 	form := url.Values{
-		"username":   {username},
-		"password":   {password},
-		"server":     {"1"},
-		"csrftoken":  {a.token},
+		"username":  {username},
+		"password":  {password},
+		"server":    {"1"},
+		"csrftoken": {a.token},
 	}
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, loginURL, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -522,8 +522,9 @@ func (a *Adapter) includeField(key string) bool {
 // or original file download URLs as RemoteRef.
 //
 // Logical path structure:
-//   {DatasetName}/{ImageName}.{ext}
-//   or: {ProjectName}/{DatasetName}/{ImageName}.{ext}
+//
+//	{DatasetName}/{ImageName}.{ext}
+//	or: {ProjectName}/{DatasetName}/{ImageName}.{ext}
 //
 // Strategy:
 //   - "download"      → downloads original file via OMERO.web

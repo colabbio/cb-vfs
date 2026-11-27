@@ -53,18 +53,30 @@ type Adapter struct {
 
 // dicomAttr represents one DICOM attribute in DICOMweb JSON model.
 type dicomAttr struct {
-	VR    string   `json:"vr"`
-	Value []string `json:"Value"`
+	VR    string `json:"vr"`
+	Value []any  `json:"Value"`
 }
 
 // dicomStudy is a DICOM JSON model object (map of tag -> attribute).
 type dicomStudy map[string]dicomAttr
 
 func (d dicomStudy) str(tag string) string {
-	if a, ok := d[tag]; ok && len(a.Value) > 0 {
-		return a.Value[0]
+	a, ok := d[tag]
+	if !ok || len(a.Value) == 0 {
+		return ""
 	}
-	return ""
+	switch v := a.Value[0].(type) {
+	case string:
+		return v
+	case map[string]any:
+		// DICOM PersonName (PN) uses {"Alphabetic": "Doe^Jane"}
+		if alpha, ok := v["Alphabetic"].(string); ok {
+			return alpha
+		}
+		return fmt.Sprintf("%v", v)
+	default:
+		return fmt.Sprintf("%v", v)
+	}
 }
 
 // New creates a new Orthanc/DICOMweb adapter.
@@ -354,7 +366,8 @@ func (a *Adapter) setAuth(req *http.Request) {
 // FileMappings with WADO-RS instance URLs as RemoteRef.
 //
 // Logical path structure:
-//   {PatientID}/{StudyDate}_{Modality}/{SeriesNumber}/{SOPInstanceUID}.dcm
+//
+//	{PatientID}/{StudyDate}_{Modality}/{SeriesNumber}/{SOPInstanceUID}.dcm
 //
 // Strategy:
 //   - "download"      → downloads instances via WADO-RS

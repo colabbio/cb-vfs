@@ -1,0 +1,4 @@
+patient_id,age,diagnosis,split
+P001,62,LUAD,train
+P002,54,BRCA,train
+P003,71,LUAD,val

@@ -14,8 +14,9 @@ import (
 // ProxyFetcher implements RemoteFetcher for the hierarchical `cb-proxy://` scheme.
 //
 // URI format:
-//   cb-proxy://<host[:port]>/<grantId>/<logicalPath>
-//   (or cb-proxy+https://<host>/<grantId>/<logicalPath> for TLS)
+//
+//	cb-proxy://<host[:port]>/<grantId>/<logicalPath>
+//	(or cb-proxy+https://<host>/<grantId>/<logicalPath> for TLS)
 //
 // It streams byte-range blocks on demand from a child Hospital MedVFS / Edge Proxy
 // node into a parent Regional Aggregator (Level 2) while propagating X-ColabBio-Grant-Id.

@@ -394,9 +394,9 @@ func readU32(b []byte, littleEndian bool) uint32 {
 // DICOMPrefetcher implements format-aware prefetch for DICOM files.
 // DICOM pixel data is typically at the end of the file after the metadata
 // preamble. The prefetcher:
-//   1. On open: prefetches the last block (pixel data start for most DICOM)
-//   2. On block load: scans for PixelData tag (7FE0,0010) to find the
-//      pixel data offset and prefetch surrounding blocks.
+//  1. On open: prefetches the last block (pixel data start for most DICOM)
+//  2. On block load: scans for PixelData tag (7FE0,0010) to find the
+//     pixel data offset and prefetch surrounding blocks.
 type DICOMPrefetcher struct{}
 
 // OnFileOpen prefetches block 0 (metadata header) — this is usually already
@@ -476,4 +476,3 @@ func (b *BAMPrefetcher) OnBlockLoaded(fileID string, blockIdx int, data []byte) 
 func fileExtension(logicalPath string) string {
 	return filepath.Ext(logicalPath)
 }
-

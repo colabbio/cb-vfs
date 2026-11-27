@@ -177,17 +177,17 @@ func TestEndToEnd_FilesSplitsLinkingVersioning(t *testing.T) {
 
 	// ── Summary ──────────────────────────────────────────────────────────
 
-	t.Logf("\n" +
-		"═══════════════════════════════════════════════\n" +
-		" Integration Test Summary\n" +
-		"═══════════════════════════════════════════════\n" +
-		" Dataset ID:   %s\n" +
-		" Run ID:       %s\n" +
-		" Total files:  %d\n" +
-		" Total bytes:  %d\n" +
-		" SHA256:       %s\n" +
-		" Splits:       train=%d val=%d test=%d\n" +
-		" Manifest:     %d bytes JSON\n" +
+	t.Logf("\n"+
+		"═══════════════════════════════════════════════\n"+
+		" Integration Test Summary\n"+
+		"═══════════════════════════════════════════════\n"+
+		" Dataset ID:   %s\n"+
+		" Run ID:       %s\n"+
+		" Total files:  %d\n"+
+		" Total bytes:  %d\n"+
+		" SHA256:       %s\n"+
+		" Splits:       train=%d val=%d test=%d\n"+
+		" Manifest:     %d bytes JSON\n"+
 		"═══════════════════════════════════════════════",
 		manifest.DatasetID,
 		manifest.RunID,
