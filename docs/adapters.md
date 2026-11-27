@@ -71,7 +71,7 @@ type FileMapping struct {
 
 ### 1. OMOP — Clinical Records
 
-> **Source:** [omop/adapter.go](file:///home/jmolmo/git/colabbio/cb-vfs/internal/adapters/omop/adapter.go)
+> **Source:** [omop/adapter.go](../internal/adapters/omop/adapter.go)
 
 Connects to an OMOP CDM PostgreSQL database and executes SQL queries. Results are materialised as CSV files.
 
@@ -111,7 +111,7 @@ sources:
 
 ### 2. FHIR — Demographics & Observations
 
-> **Source:** [fhir/adapter.go](file:///home/jmolmo/git/colabbio/cb-vfs/internal/adapters/fhir/adapter.go)
+> **Source:** [fhir/adapter.go](../internal/adapters/fhir/adapter.go)
 
 Queries a FHIR R4 REST API, paginates through Bundles, and flattens resources into CSV using dot-path field extraction.
 
@@ -172,7 +172,7 @@ sources:
 
 ### 3. OMERO — Pathology WSI
 
-> **Source:** [omero/adapter.go](file:///home/jmolmo/git/colabbio/cb-vfs/internal/adapters/omero/adapter.go)
+> **Source:** [omero/adapter.go](../internal/adapters/omero/adapter.go)
 
 Connects to an OMERO.web JSON API to access Whole Slide Images. Supports metadata extraction, thumbnail download, and FUSE virtualisation.
 
@@ -226,7 +226,7 @@ sources:
 
 ### 4. Orthanc — Radiology DICOMweb
 
-> **Source:** [orthanc/adapter.go](file:///home/jmolmo/git/colabbio/cb-vfs/internal/adapters/orthanc/adapter.go)
+> **Source:** [orthanc/adapter.go](../internal/adapters/orthanc/adapter.go)
 
 Queries a DICOMweb-compliant endpoint (Orthanc, hospital PACS, or GCP Healthcare DICOM Store) using QIDO-RS for study discovery and WADO-RS for data retrieval.
 
@@ -287,7 +287,7 @@ sources:
 
 ### 5. DICOM Local — Filesystem Scanner
 
-> **Source:** [dicom/adapter.go](file:///home/jmolmo/git/colabbio/cb-vfs/internal/adapters/dicom/adapter.go)
+> **Source:** [dicom/adapter.go](../internal/adapters/dicom/adapter.go)
 
 Scans a local directory for DICOM files, parses minimal DICOM tags (PatientID, StudyDate, Modality, SeriesNumber), and organises them into a structured tree.
 
@@ -347,7 +347,7 @@ sources:
 
 ### 6. Genomics — BAM/VCF/FASTQ
 
-> **Source:** [genomics/adapter.go](file:///home/jmolmo/git/colabbio/cb-vfs/internal/adapters/genomics/adapter.go)
+> **Source:** [genomics/adapter.go](../internal/adapters/genomics/adapter.go)
 
 Scans genomics repositories (NFS, GCS, or S3/MinIO) for alignment and variant files. Produces a validated manifest CSV — does **not** copy files.
 

@@ -1,6 +1,6 @@
 ---
 name: Feature / Epic Task
-about: Propose a new feature, architectural change, or cross-repo epic task
+about: Propose a new feature, architectural change, or enhancement
 title: "[FEAT] "
 labels: enhancement
 assignees: ''
@@ -8,16 +8,14 @@ assignees: ''
 
 ## Objective
 
-Concise description of the feature or task in canonical English.
+Concise description of the feature or task.
 
-## Canonical Spec & Master Index
+## References
 
-- Spec (`cb-docs`): https://github.com/colabbio/cb-docs/blob/main/plans/...
-- Master Index: https://github.com/colabbio/cb-docs/blob/main/plans/TODO_PLANS.md
-- Parent Tracking Issue (if cross-repo): `colabbio/<repo>#<id>`
+- Related docs or issues: `colabbio/cb-vfs#<id>`
 
 ## Acceptance Criteria
 
 - [ ] Implementation completed on `feat/<issue>-<slug>`
 - [ ] Tests / build verified
-- [ ] Verification report added in `cb-docs/reports/` (if applicable)
+- [ ] Documentation updated (if applicable)

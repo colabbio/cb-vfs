@@ -39,7 +39,7 @@ open("/data/vfs/PT001/img.dcm") │ FUSE FS (fuse.go)           │
 
 ## Lifecycle
 
-The serve engine ([engine.go](file:///home/jmolmo/git/colabbio/cb-vfs/internal/serve/engine.go)) orchestrates 6 stages:
+The serve engine ([engine.go](../internal/serve/engine.go)) orchestrates 6 stages:
 
 | Stage | Action | Code |
 |---|---|---|
@@ -81,7 +81,7 @@ Files can be registered before or after `Mount()`. When using FUSE, newly added 
 
 ## BlockManager
 
-> **Source:** [block.go](file:///home/jmolmo/git/colabbio/cb-vfs/internal/vfs/block.go)
+> **Source:** [block.go](../internal/vfs/block.go)
 
 The BlockManager splits every virtual file into fixed-size blocks and fetches them on-demand from remote sources. It provides `ReadAt(ctx, fileID, buf, offset)` — the core read path for both FUSE and the HTTP proxy fallback.
 
@@ -141,7 +141,7 @@ When `BytesCached > cacheMaxBytes`, the eviction algorithm:
 
 ## Prefetch Engine
 
-> **Source:** [prefetch.go](file:///home/jmolmo/git/colabbio/cb-vfs/internal/vfs/prefetch.go)
+> **Source:** [prefetch.go](../internal/vfs/prefetch.go)
 
 The prefetch engine runs 3 levels of anticipatory block fetching to minimise read latency.
 
@@ -244,7 +244,7 @@ The PixelData tag marks the boundary between DICOM metadata and the actual image
 
 ## HTTP API
 
-> **Source:** [server.go](file:///home/jmolmo/git/colabbio/cb-vfs/internal/serve/server.go)
+> **Source:** [server.go](../internal/serve/server.go)
 
 ### Endpoints
 
@@ -296,7 +296,7 @@ type RemoteFetcher interface {
 }
 ```
 
-The default implementation (`HTTPFetcher` in [fetcher.go](file:///home/jmolmo/git/colabbio/cb-vfs/internal/vfs/fetcher.go)) uses HTTP Range requests:
+The default implementation (`HTTPFetcher` in [fetcher.go](../internal/vfs/fetcher.go)) uses HTTP Range requests:
 
 ```
 GET {remoteRef}

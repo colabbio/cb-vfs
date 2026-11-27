@@ -350,7 +350,7 @@ volumes:
         configMap: my-vfs-config
 ```
 
-Current status: **skeleton only** — see [csi-driver.yaml](file:///home/jmolmo/git/colabbio/cb-vfs/deployments/helm/medvfs/templates/csi-driver.yaml).
+Current status: **skeleton only** — see [csi-driver.yaml](../deployments/helm/medvfs/templates/csi-driver.yaml).
 
 ---
 

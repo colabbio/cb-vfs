@@ -244,13 +244,16 @@ make dev-db
 
 | Document | Location | Description |
 |---|---|---|
-| [Quick Start](docs/quickstart.md) | `cb-vfs/docs/` | Getting started with annotated examples |
-| [YAML Spec](../cb-docs/architecture/medvfs-yaml-spec.md) | `cb-docs/` | Complete `vfs.yaml` reference |
-| [Runtime Architecture](../cb-docs/architecture/medvfs-runtime-architecture.md) | `cb-docs/` | Architecture, Nextflow integration, K8s |
-| [Market Analysis](../cb-docs/architecture/medvfs-market-disruption.md) | `cb-docs/` | Competitive landscape |
+| [Quick Start](docs/quickstart.md) | `docs/` | Getting started with annotated examples |
+| [Serve Mode & FUSE](docs/serve-mode.md) | `docs/` | Persistent FUSE daemon, block cache, and 3-level prefetch |
+| [Source Adapters](docs/adapters.md) | `docs/` | OMOP, FHIR R4, OMERO, Orthanc, DICOM, genomics, and files |
+| [DICOM & WSI Layer](docs/dicom-wsi-layer.md) | `docs/` | WSI/DICOMweb streaming and metadata handling |
+| [Kubernetes & Helm](docs/kubernetes.md) | `docs/` | DaemonSet, Sidecar, and Standalone deployments |
+| [JSON Schema](schemas/vfs-config.schema.json) | `schemas/` | Complete `vfs.yaml` JSON Schema |
+| [MedVFS Preprint](docs/medvfs_article.md) | `docs/` | Architecture, benchmarks, and federated AI manuscript |
 
 ---
 
 ## License
 
-Proprietary — ColabBio / Healthcentrix LLC. All rights reserved.
+Licensed under the [Apache License 2.0](LICENSE) — Copyright 2026 ColabBio.

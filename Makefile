@@ -2,17 +2,18 @@
 
 BINARY := medvfs
 CMD_PATH := ./cmd/medvfs
+EXAMPLE_CONFIG ?= deployments/examples/vfs-dev.yaml
 
 build:
 	go build -o $(BINARY) $(CMD_PATH)
 
 # Run setup with an example spec (requires a running OMOP Postgres)
 run-setup: build
-	./$(BINARY) setup --config ../cb-specs/catalog/datasets/dataset.omop.diabetes_cohort.yaml
+	./$(BINARY) setup --config $(EXAMPLE_CONFIG)
 
 # Validate a spec without fetching data
 validate: build
-	./$(BINARY) validate --config ../cb-specs/catalog/datasets/dataset.omop.diabetes_cohort.yaml
+	./$(BINARY) validate --config $(EXAMPLE_CONFIG)
 
 # Unit + integration tests (integration requires OMOP_DSN env var)
 test:
@@ -42,7 +43,7 @@ docker-build:
 
 # Run serve mode (FUSE daemon — requires root/CAP_SYS_ADMIN)
 run-serve: build
-	sudo ./$(BINARY) serve --config ../cb-specs/catalog/datasets/dataset.omop.diabetes_cohort.yaml
+	sudo ./$(BINARY) serve --config $(EXAMPLE_CONFIG)
 
 # Check formatting and linting
 lint:
