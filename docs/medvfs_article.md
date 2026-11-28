@@ -1,10 +1,6 @@
 # MedVFS: A Declarative Medical Virtual File System for Federated AI in Biology, Clinical Informatics, and Open Science
 
-**David Olmo Marchal**¹\*, **Lorenzo Olmo Marchal**¹, and **Jose Maria Olmo Millan**¹  
-
-¹ ColabBio Project (`https://colabbio.org`)  
-\* Correspondence: `dolmomar@colabbio.org` (`lolmo@colabbio.org`, `jmolmo@colabbio.org`)  
-
+**ColabBio Project** (`https://colabbio.org`)  
 **bioRxiv Category:** Bioinformatics  
 
 ---
@@ -133,12 +129,6 @@ Current limitations include reliance on privileged FUSE mounts in containerized 
 - **Source Code & License:** The MedVFS engine (`cb-vfs`, Go module `github.com/colabbio/medvfs`) is publicly available under the **Apache License 2.0** (`https://github.com/colabbio/cb-vfs`), alongside ColabBio platform specifications (`cb-specs`, `cb-devops`, `cb-slidelab-abmil`) under `https://github.com/colabbio`.
 - **Reproducible Manifests & Benchmarks:** Example `vfs.yaml` configurations are provided in `deployments/examples/` (e.g., `deployments/examples/vfs-dev.yaml`, `deployments/examples/vfs-specs/vfs-omero-wsi.yaml`), and the OpenSlide multi-epoch WSI cache benchmark harness is available at `benchmarks/wsi_cache_benchmark.py` (`benchmarks/vfs-tcga-benchmark.yaml`).
 - **Benchmark Data:** Live FUSE caching benchmarks used publicly available TCGA-BRCA whole-slide images (`TCGA-A2-A0T0-01Z-00-DX1`, `TCGA-A2-A0T2-01Z-00-DX1`) from The Cancer Genome Atlas (TCGA) / Genomic Data Commons (`https://portal.gdc.cancer.gov`).
-
----
-
-## Author Contributions
-
-MedVFS (`cb-vfs`) is developed as a core component of the **ColabBio** (`colabbio.org`) project. **Jose Maria Olmo Millan** is the Architect of the ColabBio platform, conceiving its federated data-plane model, declarative multi-tenant architecture, and regulatory-by-design approach. **David Olmo Marchal** is the primary implementer of MedVFS, leading the development of the Go FUSE daemon, 3-level prefetch engine, clinical/genomic source adapters, and Kubernetes deployment tooling. **Lorenzo Olmo Marchal** applied and validated ColabBio and MedVFS in his Master of Science (MS) thesis project on **SlideLab**, integrating on-the-fly WSI streaming with ABMIL prediction models.
 
 ---
 
