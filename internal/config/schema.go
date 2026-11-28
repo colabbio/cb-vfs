@@ -308,6 +308,10 @@ type FUSEConfig struct {
 	// BlockSizeMB is the size of each cache block in megabytes (default: 4).
 	BlockSizeMB int `yaml:"block_size_mb,omitempty"`
 
+	// AllowOther passes the FUSE allow_other mount option (default: true).
+	// Set to false in unprivileged environments where /etc/fuse.conf lacks user_allow_other.
+	AllowOther *bool `yaml:"allow_other,omitempty"`
+
 	// Prefetch configures the prefetch engine.
 	Prefetch *PrefetchConfig `yaml:"prefetch,omitempty"`
 }

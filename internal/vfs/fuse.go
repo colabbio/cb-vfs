@@ -98,9 +98,14 @@ func (v *FUSEVFS) Mount(ctx context.Context) error {
 		return err
 	}
 
+	allowOther := true
+	if v.cfg.AllowOther != nil {
+		allowOther = *v.cfg.AllowOther
+	}
+
 	opts := &fs.Options{
 		MountOptions: fuse.MountOptions{
-			AllowOther: true,
+			AllowOther: allowOther,
 			FsName:     "medvfs",
 			Name:       "medvfs",
 		},

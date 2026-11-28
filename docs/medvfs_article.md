@@ -13,7 +13,7 @@
 
 **Motivation:** Computational biology and clinical artificial intelligence increasingly rely on multimodal cohorts spanning gigapixel whole-slide imaging (WSI), high-throughput genomics, electronic health records (OMOP CDM, HL7 FHIR R4), and hospital PACS/microscopy archives (DICOMweb, OMERO). However, standard bioinformatics orchestrators (e.g., Nextflow) and deep learning frameworks (e.g., PyTorch, OpenSlide) expect local POSIX filesystems, whereas clinical data reside behind heterogeneous, strictly regulated APIs and databases. Conventional extract-transform-load (ETL) pipelines copy sensitive patient data into centralized data lakes, introducing storage duplication, synchronization overhead, and regulatory risk under frameworks such as the General Data Protection Regulation (GDPR).
 
-**Results:** We present **MedVFS** (*Medical Virtual File System*), the Go-based data-plane orchestrator of the **ColabBio** (`colabbio.org`) platform. Guided by the principle *"The data doesn't move; the model goes to the data,"* MedVFS exposes heterogeneous clinical and biological sources as a unified, read-only POSIX filesystem via FUSE (`medvfs serve`) or as deterministic batch snapshots (`medvfs setup`), governed by a single declarative `vfs.yaml` manifest. MedVFS introduces a 4 MB block-based LRU cache, HTTP Range streaming, and a 3-level format-aware prefetch engine (TIFF IFDs, DICOM `PixelData`, BAM headers) alongside an ML Dataset Engine for automated patient linking, deterministic splits, and SHA-256 versioning. In live evaluation on 1.55 GB TCGA-BRCA `.svs` slides, MedVFS achieved a **93.5% cache hit rate** with zero-copy header access. In an end-to-end digital pathology case study (**SlideLab** + Nextflow 25.04.6 + ABMIL), MedVFS enabled on-the-fly streaming that eliminated 5,000–20,000 intermediate tile files per slide (**99.6% storage reduction**), yielded a **3×–4× pipeline speedup**, and achieved **<3 s Kubernetes Pod cold-starts**.
+**Results:** We present **MedVFS** (*Medical Virtual File System*), the Go-based data-plane orchestrator of the **ColabBio** (`colabbio.org`) platform. Guided by the principle *"The data doesn't move; the model goes to the data,"* MedVFS exposes heterogeneous clinical and biological sources as a unified, read-only POSIX filesystem via FUSE (`medvfs serve`) or as deterministic batch snapshots (`medvfs setup`), governed by a single declarative `vfs.yaml` manifest. MedVFS introduces a 4 MB block-based LRU cache, HTTP Range streaming, and a 3-level format-aware prefetch engine (TIFF IFDs, DICOM `PixelData`, BAM headers) alongside an ML Dataset Engine for automated patient linking, deterministic splits, and SHA-256 versioning. In live evaluation on a 25-slide remote S3 TCGA-BRCA cohort (9.34 GB) using OpenSlide tile extraction (800 tiles/epoch), MedVFS achieved a **95.9% cold-cache hit rate** while fetching only **19.1%** of the cohort (**80.9% bandwidth reduction**), rising to **99.97% hit rate** with a **125× Time-to-First-Tile speedup** in Epoch 2. In an end-to-end digital pathology case study (**SlideLab** + Nextflow 25.04.6 + ABMIL), MedVFS enabled on-the-fly streaming that eliminated full-slide local staging and 5,000–20,000 intermediate tile files per slide (**99.6% storage reduction**), yielded a **3×–4× pipeline speedup**, and—paired with SlideLab's lightweight `slidelab:cpu` container—achieved **<3 s Kubernetes Pod cold-starts**.
 
 **Availability:** Source code is developed at `https://github.com/colabbio/cb-vfs` (Go module `github.com/colabbio/medvfs`).
 
@@ -23,9 +23,9 @@
 
 Modern biomedical discovery sits at the intersection of **AI in Biology**—characterized by multi-gigabyte WSI pathology slides (`.svs`, `.tiff`), aligned sequencing reads (`.bam`, `.cram`), and variant callsets (`.vcf`)—and **Clinical Informatics**, anchored in longitudinal electronic health records (OMOP Common Data Model, HL7 FHIR R4) and clinical imaging repositories (Orthanc DICOMweb, OMERO) [1–4]. Bridging these two domains is essential for precision oncology, biomarker discovery, and real-world evidence (RWE) studies.
 
-In practice, however, data engineering remains a major barrier. Bioinformaticians and machine learning (ML) engineers build reproducible pipelines using Nextflow/`nf-core` [5], OpenSlide [6], and PyTorch, all of which assume POSIX file semantics. Hospital IT environments, conversely, enforce strict perimeter security, data minimization, and access auditing. Centralizing raw Protected Health Information (PHI) into external cloud buckets creates friction with **Data Protection Officers (DPOs)** and **Chief Security Officers (CSOs)** under **GDPR**, while duplicating terabytes of imaging and genomic data saturates storage and network bandwidth.
+In practice, however, data engineering remains a major barrier. Bioinformaticians and machine learning (ML) engineers build reproducible pipelines using Nextflow/`nf-core` [5], OpenSlide [6], and PyTorch, all of which assume POSIX file semantics. Hospital IT environments, conversely, enforce strict perimeter security, data minimization, and access auditing. Centralizing raw Protected Health Information (PHI) into external cloud buckets creates friction with **Data Protection Officers (DPOs)** and **Chief Security Officers (CSOs)** under **GDPR** [11] and the **EU AI Act** [12], while duplicating terabytes of imaging and genomic data saturates storage and network bandwidth.
 
-**Related Work and Positioning:** Existing biomedical data platforms fall into three categories, none of which simultaneously satisfy open-source, on-edge, and multimodal ML requirements (**Table 1**). Centralized Real-World Evidence (RWE) platforms (e.g., Flatiron Health, IQVIA, Aetion, TriNetX) and cloud-hosted health lakes (e.g., BigQuery Health, AWS HealthLake) require hospitals to export patient data off-premise, creating severe GDPR compliance friction and vendor lock-in. Proprietary on-edge platforms (e.g., Palantir Foundry, Rhino Health) preserve local data residency but rely on closed-source stacks with high licensing costs and limited native support for open bioinformatics standards. Finally, open-source federated query networks such as OHDSI/ATLAS [1] and DataSHIELD keep data at the hospital node, but are restricted to distributed SQL or R statistical queries—they cannot orchestrate containerized deep learning workloads or Nextflow pipelines across gigapixel WSI, DICOM, and genomic binaries. Similarly, generic cloud FUSE mounts (`gcsfuse`, `s3fs`) lack biomedical format awareness (TIFF IFDs, DICOM tags, BAM headers) and cannot bridge relational clinical databases (OMOP/FHIR) alongside imaging files. **ColabBio + MedVFS** fills this empty quadrant: an **open-source, on-edge, Kubernetes-native** platform supporting multimodal ML containers.
+**Related Work and Positioning:** Existing biomedical data platforms fall into three categories, none of which simultaneously satisfy open-source, on-edge, and multimodal ML requirements (**Table 1**). Centralized Real-World Evidence (RWE) platforms (e.g., Flatiron Health, IQVIA, Aetion, TriNetX) and cloud-hosted health lakes (e.g., BigQuery Health, AWS HealthLake) require hospitals to export patient data off-premise, creating severe GDPR compliance friction and vendor lock-in. Proprietary on-edge platforms (e.g., Palantir Foundry, Rhino Health) preserve local data residency but rely on closed-source stacks with high licensing costs and limited native support for open bioinformatics standards. Finally, open-source federated query networks such as OHDSI/ATLAS [1] and DataSHIELD [8] keep data at the hospital node, but are restricted to distributed SQL or R statistical queries—they cannot orchestrate containerized deep learning workloads or Nextflow pipelines across gigapixel WSI, DICOM, and genomic binaries. Similarly, generic cloud FUSE mounts (`gcsfuse` [9], `s3fs` [10]) lack biomedical format awareness (TIFF IFDs, DICOM tags, BAM headers) and cannot bridge relational clinical databases (OMOP/FHIR) alongside imaging files. **ColabBio + MedVFS** fills this empty quadrant: an **open-source, on-edge, Kubernetes-native** platform supporting multimodal ML containers.
 
 | Platform Category | Representative Systems | Data Residency | Modalities | Arbitrary ML / Nextflow Containers | Open Source |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -49,23 +49,9 @@ Implemented in Go (`go 1.26.4`) as a single static binary driven by `vfs.yaml`, 
 1. **`medvfs setup` (Batch Materialization):** Extracts and transforms configured sources into flat files on local disk or Persistent Volume Claims (PVCs). This mode produces immutable, SHA-256-verified snapshots suited for Nextflow inputs and regulatory-grade studies requiring frozen artifacts (e.g., ICH E6, 21 CFR Part 11).
 2. **`medvfs serve` (Persistent FUSE Daemon):** Mounts a read-only virtual filesystem (default `/data/vfs`) backed by remote sources while exposing an HTTP/Server-Sent Events (SSE) control and telemetry API on port `:8090` (`/manifest`, `/dataset`, `/stats`, `/events` via `fsnotify`, and `/proxy/{path}` as an HTTP fallback for FUSE-less containers).
 
-```mermaid
-flowchart LR
-    Config["vfs.yaml (Declarative Manifest)"] --> Setup["medvfs setup (Batch Mode)"]
-    Config --> Serve["medvfs serve (Daemon Mode)"]
+![Figure 1. Dual-mode architecture of MedVFS.](figures/figure1_architecture.svg)
 
-    subgraph SetupMode["Batch Materialization"]
-        Setup -->|"Parallel Extract & Transform"| Disk["Local Disk / PVC Snapshot"]
-        Disk -->|"Immutable SHA-256 Artifacts"| Audit["Nextflow Inputs / Regulatory Audits (ICH E6)"]
-    end
-
-    subgraph ServeMode["Persistent FUSE Streaming"]
-        Serve -->|"HTTP Range + L1/L2/L3 Prefetch"| Cache["4 MB Block Cache (LRU)"]
-        Cache -->|"Read-Only POSIX Mount"| FUSE["/data/vfs (Zero-Copy WSI / DICOM / BAM)"]
-        Serve -->|"Control & Telemetry (:8090)"| API["HTTP/SSE API (/manifest, /dataset, /stats, /events)"]
-    end
-```
-**Figure 1.** Dual-mode architecture of MedVFS (`setup` batch materialization vs. `serve` persistent FUSE streaming).
+**Figure 1.** Dual-mode architecture of MedVFS (`setup` batch materialization vs. `serve` persistent FUSE streaming). Vector sources: `figures/figure1_architecture.mmd` / `.pdf`.
 
 ### 2.3 Block-Based FUSE and 3-Level Format-Aware Prefetch
 In `serve` mode, remote objects are partitioned into **4 MB blocks** managed by a `BlockManager` with Least Recently Used (LRU) eviction and an `HTTP Range Fetcher` supporting Google Cloud Storage (GCS), Amazon S3, and NFS. To minimize latency during random-access reads typical of biomedical formats, MedVFS implements a 3-level prefetch engine:
@@ -85,60 +71,50 @@ Unlike centralized study platforms that force participating hospitals to upload 
 3. **Auditability & EU AI Act Traceability:** MedVFS generates a deterministic `manifest.json` with SHA-256 checksums for every cohort snapshot, providing end-to-end training-data lineage aligned with **GDPR** and **EU AI Act** high-risk medical AI requirements.
 4. **Federated Aggregation:** Only non-PHI outputs—such as trained model weights, validation metrics, or summary statistics—leave the hospital perimeter to join the consortium's model registry alongside reproducible benchmarks run on public open-data lakes (e.g., TCGA or IDC on GCS/S3).
 
-```mermaid
-flowchart TD
-    subgraph Coordinator["Multi-Center Study Coordinator / Open Science Hub"]
-        Spec["Declarative Study Contract (vfs.yaml + Nextflow/ML Container)"]
-        Registry["Federated Model Registry & SHA-256 Audit Log"]
-    end
+![Figure 2. Federated hospital network topology.](figures/figure2_federated_topology.svg)
 
-    subgraph Hospital1["Hospital Node 1 (Sovereign Perimeter)"]
-        H1_Data["OMOP CDM + Orthanc PACS"] --> H1_VFS["MedVFS (Read-Only Mount)"]
-        H1_VFS --> H1_Pod["Sandboxed K8s Pod (NetworkPolicy Isolated)"]
-        H1_Pod --> H1_Manifest["manifest.json (SHA-256 Lineage)"]
-    end
-
-    subgraph Hospital2["Hospital Node 2 (Sovereign Perimeter)"]
-        H2_Data["FHIR R4 + OMERO WSI"] --> H2_VFS["MedVFS (Read-Only Mount)"]
-        H2_VFS --> H2_Pod["Sandboxed K8s Pod (NetworkPolicy Isolated)"]
-        H2_Pod --> H2_Manifest["manifest.json (SHA-256 Lineage)"]
-    end
-
-    subgraph OpenCloud["Public Open-Data Lake (Reproducible Baseline)"]
-        C_Data["TCGA / IDC (GCS / S3)"] --> C_VFS["MedVFS (HTTP Range)"]
-        C_VFS --> C_Pod["Benchmark Nextflow / ML Node"]
-    end
-
-    Spec -->|"Deploy Study"| H1_VFS
-    Spec -->|"Deploy Study"| H2_VFS
-    Spec -->|"Validate Baseline"| C_VFS
-
-    H1_Pod -->|"Non-PHI Weights & Metrics Only"| Registry
-    H2_Pod -->|"Non-PHI Weights & Metrics Only"| Registry
-    C_Pod -->|"Open Benchmark Metrics"| Registry
-```
-**Figure 2.** Federated hospital network topology for multi-center clinical and biological studies using MedVFS and ColabBio, contrasting with centralized data-lake platforms by keeping all raw PHI inside sovereign hospital perimeters.
+**Figure 2.** Federated hospital network topology for multi-center clinical and biological studies using MedVFS and ColabBio, contrasting with centralized data-lake platforms by keeping all raw PHI inside sovereign hospital perimeters. Vector sources: `figures/figure2_federated_topology.mmd` / `.pdf`.
 
 ---
 
 ## 3. Results
 
 ### 3.1 Live FUSE Mounting and Cache Efficiency
-We evaluated `medvfs serve` on a seed cohort (`tcga-brca-seed-vfs`) comprising public TCGA-BRCA whole-slide images (`TCGA-A2-A0T0-01Z-00-DX1.svs`, 1,559,068,211 bytes [1.55 GB]; `TCGA-A2-A0T2-01Z-00-DX1.svs`, 273,678,336 bytes) and `.h5` feature files. Standard POSIX utilities (`ls`, `file`) inspected the virtualized `/tmp/medvfs` mount with zero-copy TIFF header resolution. Live telemetry queried from the `:8092/stats` endpoint recorded **116 cache hits versus 8 misses**, corresponding to a **93.5% cache hit rate** (~32.3 MB fetched/cached) without downloading the full gigapixel slides.
+We evaluated `medvfs serve` on a seed cohort (`tcga-brca-seed-vfs`) comprising public TCGA-BRCA whole-slide images (`TCGA-A2-A0T0-01Z-00-DX1.svs`, 1,559,068,211 bytes [1.55 GB]; `TCGA-A2-A0T2-01Z-00-DX1.svs`, 273,678,336 bytes) and `.h5` feature files. Standard POSIX utilities (`ls`, `file`) inspected the virtualized `/tmp/medvfs` mount with zero-copy TIFF header resolution. Live telemetry queried from the `:8090/stats` endpoint recorded **116 cache hits versus 8 misses**, corresponding to a **93.5% cache hit rate** (~32.3 MB fetched/cached) without downloading the full gigapixel slides.
+
+To evaluate the 4 MB LRU block cache and 3-level format-aware prefetch engine under realistic deep-learning I/O load, we ran a 2-epoch OpenSlide (v1.4.7) multi-resolution tile-extraction benchmark (`benchmarks/wsi_cache_benchmark.py`) across two cohorts:
+1. **25-slide Remote S3 Cohort (`s3://tcga-2-open`, 9.34 GB / 8.70 GiB):** 25 TCGA-BRCA `.svs` slides mounted remotely over WAN via HTTP Range (`allow_other: false`), extracting 32 random 256×256 RGB tiles at pyramid level 1 per slide (800 tiles/epoch; 1,600 tiles total).
+2. **3-slide Local Baseline Cohort (5.24 GB / 4.88 GiB):** 3 TCGA-BRCA `.svs` slides comparing `medvfs serve` against direct local POSIX disk access (128 tiles/slide; 384 tiles/epoch).
+
+**Table 2** summarizes the measured cache efficiency, Time-to-First-Tile (TTFT), and network transfer savings across both cohorts:
+
+| Cohort & Mount | Epoch | Slides | Tiles | TTFT Median (ms) | TTFT p95 (ms) | Duration (s) | Throughput (tiles/s) | Cache Hit Rate | Bytes Fetched |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Remote S3 (`tcga-2-open`) — MedVFS** | 1 (Cold) | 25 | 800 | 5,530.09 | 911,218.76 | 5,097.30 | 0.16 | **95.9%** (10,345 / 444) | **1,704.4 MiB** (19.1% of 8.70 GiB) |
+| **Remote S3 (`tcga-2-open`) — MedVFS** | 2 (Warm) | 25 | 800 | **44.08** | **80.97** | **1,039.94** | **0.77** | **100.0%** (10,481 / 3) | **20.0 MiB** |
+| **Local POSIX — MedVFS (FUSE)** | 1 (Cold) | 3 | 384 | 557.82 | 1,090.21 | 9.59 | 40.05 | **94.5%** (3,283 / 190) | **755.4 MiB** (15.1% of 4.88 GiB) |
+| **Local POSIX — MedVFS (FUSE)** | 2 (Warm) | 3 | 384 | **26.56** | **73.36** | **4.52** | **84.95** | **100.0%** (3,328 / 0) | **0.0 MiB** |
+| Local POSIX — Raw Disk | 1 | 3 | 384 | 18.85 | 33.24 | 3.67 | 104.70 | N/A | N/A |
+| Local POSIX — Raw Disk | 2 | 3 | 384 | 17.18 | 35.75 | 3.51 | 109.47 | N/A | N/A |
+
+**Table 2.** Multi-epoch OpenSlide tile-extraction benchmark across a 25-slide remote S3 TCGA-BRCA cohort (9.34 GB) and a 3-slide local baseline (5.24 GB). On the 25-slide remote S3 cohort, MedVFS achieved a **95.9% cache hit rate** in Epoch 1 while fetching only **1,704.4 MiB** (an **80.9% bandwidth reduction** vs. full-cohort download). In Epoch 2, warm-cache hits reached **99.97%** (`10,481 / 3`), reducing median TTFT by **125×** (5,530.09 ms → 44.08 ms) and total epoch duration by **4.9×**. On the local baseline, warm-cache MedVFS reached 77.6% of raw local disk throughput. The reproducible harness and GCS cohort manifest (`benchmarks/vfs-tcga-benchmark.yaml`) also support comparisons against `gcsfuse` [9] and `s3fs` [10].
 
 ### 3.2 End-to-End Case Study: SlideLab On-The-Fly WSI Streaming and ABMIL
 We integrated MedVFS into **SlideLab**, a digital pathology feature-extraction and Attention-Based Multiple Instance Learning (ABMIL) [7] pipeline orchestrated in **Nextflow 25.04.6 DSL2** (`cb-slidelab-abmil/pipelines/main.nf`). The pipeline executes five stages: `SLIDELAB_EXTRACT`, `WRITE_OMERO_ANNOTATIONS`, `ABMIL_TRAIN`, `MLFLOW_REGISTER`, and `TRITON_DEPLOY`.
 
-Using MedVFS POSIX mounts, SlideLab's `StreamingTileDataset` employs lazy OpenSlide C-layer loading to stream tissue tiles directly into RAM/VRAM, apply quality-control (QC) filters (tissue, blur, pen), and encode ResNet50/UNI embeddings atomically into `features.h5`, while persisting QC and PAC metrics back to OMERO as `MapAnnotation` records (`colabbio.ai.slidelab.qc_and_mil`).
+Using MedVFS POSIX mounts, SlideLab's `StreamingTileDataset` employs lazy OpenSlide C-layer loading to stream tissue tiles directly into RAM/VRAM, apply quality-control (QC) filters (tissue, blur, pen), and encode ResNet50/UNI embeddings atomically into `features.h5`, while persisting QC and PAC metrics back to OMERO as `MapAnnotation` records (`colabbio.ai.slidelab.qc_and_mil`). **Table 3** distinguishes improvements directly attributable to **MedVFS** (eliminating full-slide staging and intermediate disk tiles via HTTP Range streaming) from runtime optimizations in **SlideLab** (container footprint).
 
-| Pipeline Metric | Traditional Disk-Based Workflow | MedVFS + SlideLab On-The-Fly | Observed Improvement |
-| :--- | :--- | :--- | :--- |
-| **Intermediate tile files / WSI** | 5,000–20,000 PNG/JPEG files | **0 files** (in-memory tensors) | **100% eliminated** |
-| **Disk volume written / WSI** | ~2.5–5.0 GB | **~10–20 MB** (`features.h5`) | **99.6% reduction** |
-| **Pipeline throughput** | Write-then-read I/O bottleneck | Single-pass memory streaming | **3×–4× speedup** |
-| **K8s Pod cold-start** | Monolithic GPU image (~18 GB) | `slidelab:cpu` (~1.2 GB) | **< 3 seconds** |
+| Pipeline Metric | Traditional Disk-Based Workflow | MedVFS + SlideLab On-The-Fly | Observed Improvement | Primary Attribution |
+| :--- | :--- | :--- | :--- | :--- |
+| **Full `.svs` node staging** | Full slide pre-copied (~0.3–1.6 GB / WSI) | **0 bytes pre-staged** (HTTP Range on demand) | **Zero-copy mount** | **MedVFS** |
+| **Intermediate tile files / WSI** | 5,000–20,000 PNG/JPEG files | **0 files** (in-memory tensors) | **100% eliminated** | **MedVFS + SlideLab** |
+| **Disk volume written / WSI** | ~2.5–5.0 GB | **~10–20 MB** (`features.h5`) | **99.6% reduction** | **MedVFS + SlideLab** |
+| **Pipeline throughput** | Write-then-read I/O bottleneck | Single-pass memory streaming | **3×–4× speedup** | **MedVFS + SlideLab** |
+| **K8s Pod cold-start** | Monolithic GPU image (~18 GB) | `slidelab:cpu` (~1.2 GB) | **< 3 seconds** | **SlideLab Container** |
 
-By eliminating millions of small temporary tile files, the MedVFS–SlideLab integration removes PVC IOPS saturation and filesystem inode locking across multi-worker PyTorch runs.
+**Table 3.** End-to-end comparison of traditional disk-staged pathology workflows versus MedVFS on-the-fly streaming paired with SlideLab, separating data-plane (MedVFS) and container-runtime (SlideLab) contributions.
+
+By eliminating full-slide node staging and millions of small temporary tile files, the MedVFS–SlideLab integration removes PVC IOPS saturation and filesystem inode locking across multi-worker PyTorch runs.
 
 ---
 
@@ -152,7 +128,8 @@ Current limitations include reliance on privileged FUSE mounts in containerized 
 
 ## 5. Code and Data Availability
 
-- **Source Code:** The MedVFS engine (`cb-vfs`, Go module `github.com/colabbio/medvfs`) and ColabBio platform specifications (`cb-specs`, `cb-devops`, `cb-slidelab-abmil`) are developed under the ColabBio organization at `https://github.com/colabbio`.
+- **Source Code & License:** The MedVFS engine (`cb-vfs`, Go module `github.com/colabbio/medvfs`) is publicly available under the **Apache License 2.0** (`https://github.com/colabbio/cb-vfs`), alongside ColabBio platform specifications (`cb-specs`, `cb-devops`, `cb-slidelab-abmil`) under `https://github.com/colabbio`.
+- **Reproducible Manifests & Benchmarks:** Example `vfs.yaml` configurations are provided in `deployments/examples/` (e.g., `deployments/examples/vfs-dev.yaml`, `deployments/examples/vfs-specs/vfs-omero-wsi.yaml`), and the OpenSlide multi-epoch WSI cache benchmark harness is available at `benchmarks/wsi_cache_benchmark.py` (`benchmarks/vfs-tcga-benchmark.yaml`).
 - **Benchmark Data:** Live FUSE caching benchmarks used publicly available TCGA-BRCA whole-slide images (`TCGA-A2-A0T0-01Z-00-DX1`, `TCGA-A2-A0T2-01Z-00-DX1`) from The Cancer Genome Atlas (TCGA) / Genomic Data Commons (`https://portal.gdc.cancer.gov`).
 
 ---
@@ -172,3 +149,8 @@ MedVFS (`cb-vfs`) is developed as a core component of the **ColabBio** (`colabbi
 5. Di Tommaso P, et al. Nextflow enables reproducible computational workflows. *Nat Biotechnol*. 2017;35(4):316–319.
 6. Goode A, et al. OpenSlide: A vendor-neutral software foundation for digital pathology. *J Pathol Inform*. 2013;4:27.
 7. Ilse M, Tomczak J, Welling M. Attention-based Deep Multiple Instance Learning. *Proc ICML*. 2018;80:2127–2136.
+8. Gaye A, et al. DataSHIELD: taking the analysis to the data, not the data to the analysis. *Int J Epidemiol*. 2014;43(6):1929–1944.
+9. Google Cloud. Cloud Storage FUSE (`gcsfuse`). `https://github.com/GoogleCloudPlatform/gcsfuse`.
+10. `s3fs-fuse`: FUSE-based file system backed by Amazon S3. `https://github.com/s3fs-fuse/s3fs-fuse`.
+11. European Parliament and Council. Regulation (EU) 2016/679 (General Data Protection Regulation, GDPR). *Official Journal of the European Union*. 2016;L119:1–88.
+12. European Parliament and Council. Regulation (EU) 2024/1689 (Artificial Intelligence Act, EU AI Act). *Official Journal of the European Union*. 2024.

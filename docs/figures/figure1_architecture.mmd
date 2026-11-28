@@ -1,0 +1,14 @@
+flowchart LR
+    Config["vfs.yaml (Declarative Manifest)"] --> Setup["medvfs setup (Batch Mode)"]
+    Config --> Serve["medvfs serve (Daemon Mode)"]
+
+    subgraph SetupMode["Batch Materialization"]
+        Setup -->|"Parallel Extract & Transform"| Disk["Local Disk / PVC Snapshot"]
+        Disk -->|"Immutable SHA-256 Artifacts"| Audit["Nextflow Inputs / Regulatory Audits (ICH E6)"]
+    end
+
+    subgraph ServeMode["Persistent FUSE Streaming"]
+        Serve -->|"HTTP Range + L1/L2/L3 Prefetch"| Cache["4 MB Block Cache (LRU)"]
+        Cache -->|"Read-Only POSIX Mount"| FUSE["/data/vfs (Zero-Copy WSI / DICOM / BAM)"]
+        Serve -->|"Control & Telemetry (:8090)"| API["HTTP/SSE API (/manifest, /dataset, /stats, /events)"]
+    end

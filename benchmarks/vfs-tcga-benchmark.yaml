@@ -1,0 +1,34 @@
+# Reproducible TCGA-BRCA Benchmark Manifest for MedVFS
+# Mounts public TCGA-BRCA .svs whole-slide images for OpenSlide tile-extraction benchmarks.
+version: "1"
+metadata:
+  name: tcga-brca-wsi-benchmark
+  description: "Public TCGA-BRCA WSI cohort for MedVFS vs. generic FUSE cache benchmarking"
+
+storage:
+  type: emptydir
+  output_dir: /tmp/medvfs-bench-output
+
+mount:
+  path: /tmp/medvfs-bench
+  readonly: true
+
+serve:
+  port: 8090
+  fuse:
+    mount_point: /tmp/medvfs-bench
+    cache_dir: /tmp/medvfs-bench-cache
+    allow_other: false
+
+sources:
+  - id: tcga_brca_wsi
+    type: files
+    files:
+      storage: gcs
+      bucket: gdc-tcga-phs000178-open
+      prefix: ""
+      patterns:
+        - "*.svs"
+    materialize:
+      strategy: fuse_tree
+      output: wsi/
