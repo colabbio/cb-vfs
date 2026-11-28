@@ -122,6 +122,8 @@ By eliminating full-slide node staging and millions of small temporary tile file
 
 MedVFS demonstrates that unifying **AI in Biology** and **Clinical Informatics** does not require centralizing sensitive patient data or refactoring established bioinformatics software. By pairing format-aware FUSE block streaming with declarative `vfs.yaml` specifications, MedVFS satisfies the operational needs of bioinformaticians while addressing the legal and security mandates of hospital DPOs and CSOs under GDPR.
 
+A key architectural takeaway is that high-throughput multimodal streaming does not require heavy middleware or patches to downstream bioinformatics tools. By reducing the kernel–userspace contract in `hanwen/go-fuse/v2` to read-only POSIX `read(offset, size)` calls backed by aligned 4 MB HTTP Range blocks (`BlockManager`), MedVFS exploits the sparse, pyramidal layout of biomedical formats (tiled TIFF/SVS pyramids and indexed BAMs). In practice, a single OpenSlide region query issues dozens of small, spatially localized POSIX reads that hit the same cached 4 MB block—explaining both the **80.9% network bandwidth reduction** on cold passes and the **95.9%–99.97% cache hit rates** achieved within a single static Go binary.
+
 Current limitations include reliance on privileged FUSE mounts in containerized environments (mitigated via the `/proxy/{path}` HTTP fallback) and static node configuration. Future work will complete a production Kubernetes CSI driver for dynamic multi-tenant volume provisioning, introduce post-materialization Nextflow execution hooks, and expand public health system ingestion adapters to further lower barriers for international open-science consortia.
 
 ---
