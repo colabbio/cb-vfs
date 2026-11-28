@@ -1,0 +1,32 @@
+[
+  {
+    "mount_name": "medvfs_s3",
+    "epoch": 1,
+    "slides_count": 25,
+    "total_slide_bytes": 9341183733,
+    "tiles_extracted": 800,
+    "ttft_median_ms": 5530.09,
+    "ttft_p95_ms": 911218.76,
+    "total_duration_s": 5097.304,
+    "throughput_tiles_per_s": 0.16,
+    "medvfs_hits_delta": 10345,
+    "medvfs_misses_delta": 444,
+    "medvfs_hit_rate_pct": 95.88,
+    "medvfs_bytes_fetched_delta": 1787242229
+  },
+  {
+    "mount_name": "medvfs_s3",
+    "epoch": 2,
+    "slides_count": 25,
+    "total_slide_bytes": 9341183733,
+    "tiles_extracted": 800,
+    "ttft_median_ms": 44.08,
+    "ttft_p95_ms": 80.97,
+    "total_duration_s": 1039.94,
+    "throughput_tiles_per_s": 0.77,
+    "medvfs_hits_delta": 10481,
+    "medvfs_misses_delta": 3,
+    "medvfs_hit_rate_pct": 99.97,
+    "medvfs_bytes_fetched_delta": 20971520
+  }
+]

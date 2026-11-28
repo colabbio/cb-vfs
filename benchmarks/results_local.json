@@ -1,0 +1,62 @@
+[
+  {
+    "mount_name": "medvfs",
+    "epoch": 1,
+    "slides_count": 3,
+    "total_slide_bytes": 5242270097,
+    "tiles_extracted": 384,
+    "ttft_median_ms": 557.82,
+    "ttft_p95_ms": 1090.21,
+    "total_duration_s": 9.587,
+    "throughput_tiles_per_s": 40.05,
+    "medvfs_hits_delta": 3283,
+    "medvfs_misses_delta": 190,
+    "medvfs_hit_rate_pct": 94.53,
+    "medvfs_bytes_fetched_delta": 792113553
+  },
+  {
+    "mount_name": "medvfs",
+    "epoch": 2,
+    "slides_count": 3,
+    "total_slide_bytes": 5242270097,
+    "tiles_extracted": 384,
+    "ttft_median_ms": 26.56,
+    "ttft_p95_ms": 73.36,
+    "total_duration_s": 4.52,
+    "throughput_tiles_per_s": 84.95,
+    "medvfs_hits_delta": 3328,
+    "medvfs_misses_delta": 0,
+    "medvfs_hit_rate_pct": 100.0,
+    "medvfs_bytes_fetched_delta": 0
+  },
+  {
+    "mount_name": "local_disk",
+    "epoch": 1,
+    "slides_count": 3,
+    "total_slide_bytes": 5242270097,
+    "tiles_extracted": 384,
+    "ttft_median_ms": 18.85,
+    "ttft_p95_ms": 33.24,
+    "total_duration_s": 3.667,
+    "throughput_tiles_per_s": 104.7,
+    "medvfs_hits_delta": null,
+    "medvfs_misses_delta": null,
+    "medvfs_hit_rate_pct": null,
+    "medvfs_bytes_fetched_delta": null
+  },
+  {
+    "mount_name": "local_disk",
+    "epoch": 2,
+    "slides_count": 3,
+    "total_slide_bytes": 5242270097,
+    "tiles_extracted": 384,
+    "ttft_median_ms": 17.18,
+    "ttft_p95_ms": 35.75,
+    "total_duration_s": 3.508,
+    "throughput_tiles_per_s": 109.47,
+    "medvfs_hits_delta": null,
+    "medvfs_misses_delta": null,
+    "medvfs_hit_rate_pct": null,
+    "medvfs_bytes_fetched_delta": null
+  }
+]

@@ -1,0 +1,30 @@
+flowchart TD
+    subgraph Coordinator["Multi-Center Study Coordinator / Open Science Hub"]
+        Spec["Declarative Study Contract (vfs.yaml + Nextflow/ML Container)"]
+        Registry["Federated Model Registry & SHA-256 Audit Log"]
+    end
+
+    subgraph Hospital1["Hospital Node 1 (Sovereign Perimeter)"]
+        H1_Data["OMOP CDM + Orthanc PACS"] --> H1_VFS["MedVFS (Read-Only Mount)"]
+        H1_VFS --> H1_Pod["Sandboxed K8s Pod (NetworkPolicy Isolated)"]
+        H1_Pod --> H1_Manifest["manifest.json (SHA-256 Lineage)"]
+    end
+
+    subgraph Hospital2["Hospital Node 2 (Sovereign Perimeter)"]
+        H2_Data["FHIR R4 + OMERO WSI"] --> H2_VFS["MedVFS (Read-Only Mount)"]
+        H2_VFS --> H2_Pod["Sandboxed K8s Pod (NetworkPolicy Isolated)"]
+        H2_Pod --> H2_Manifest["manifest.json (SHA-256 Lineage)"]
+    end
+
+    subgraph OpenCloud["Public Open-Data Lake (Reproducible Baseline)"]
+        C_Data["TCGA / IDC (GCS / S3)"] --> C_VFS["MedVFS (HTTP Range)"]
+        C_VFS --> C_Pod["Benchmark Nextflow / ML Node"]
+    end
+
+    Spec -->|"Deploy Study"| H1_VFS
+    Spec -->|"Deploy Study"| H2_VFS
+    Spec -->|"Validate Baseline"| C_VFS
+
+    H1_Pod -->|"Non-PHI Weights & Metrics Only"| Registry
+    H2_Pod -->|"Non-PHI Weights & Metrics Only"| Registry
+    C_Pod -->|"Open Benchmark Metrics"| Registry
